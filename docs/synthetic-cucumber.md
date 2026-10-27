@@ -14,6 +14,16 @@ npm run test:features -- --tags @synthetic
 
 The command reports the scenario's actual outcome in the terminal and writes Cucumber JSON results to `reports/cucumber-results.json`. A failed browser assertion fails the command. To select a different tagged feature, pass its tag after `--`; only reviewed step definitions loaded by `cucumber.js` are executable. Feature files are Gherkin descriptions, not JavaScript or uploaded customer code.
 
+Cucumber steps and hooks have a validated 15-second default timeout. To adjust it for a slower local machine, set `CUCUMBER_STEP_TIMEOUT_MS` to an integer from `12000` through `60000` (for example, `CUCUMBER_STEP_TIMEOUT_MS=20000 npm run test:features -- --tags @synthetic`). Values outside that range are rejected before execution. Playwright launch/navigation are bounded at 10 seconds, while actions and assertions retain their 5-second timeout, so their useful error details surface before Cucumber's outer timeout.
+
+Run the local timeout and cleanup regression checks with:
+
+```bash
+npm run test:features:regression
+```
+
+These checks cover the default and range validation, a synthetic step lasting longer than the old 5-second limit, readable Playwright assertion output, and process exit after a failed assertion to verify cleanup.
+
 ## Scope and boundaries
 
 Owned paths for this standalone bootstrap are `package.json`, `package-lock.json`, `cucumber.js`, `features/synthetic.feature`, `features/steps/synthetic.steps.cjs`, `features/support/hooks.cjs`, this guide, and the README link. The feature describes observable behavior; the step definitions contain the reviewed Playwright actions and assertions, and the support hooks own the local target and browser lifecycle.

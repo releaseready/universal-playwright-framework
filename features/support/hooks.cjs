@@ -3,10 +3,12 @@ const {
   AfterAll,
   Before,
   BeforeAll,
+  setDefaultTimeout,
   setWorldConstructor,
 } = require("@cucumber/cucumber");
 const { chromium } = require("@playwright/test");
 const http = require("node:http");
+const { getStepTimeoutMs } = require("./step-timeout.cjs");
 
 class SyntheticWorld {
   browser;
@@ -14,6 +16,7 @@ class SyntheticWorld {
   page;
 }
 
+setDefaultTimeout(getStepTimeoutMs(process.env.CUCUMBER_STEP_TIMEOUT_MS));
 setWorldConstructor(SyntheticWorld);
 
 let browser;
@@ -21,7 +24,7 @@ let server;
 let baseUrl;
 
 BeforeAll(async function () {
-  browser = await chromium.launch();
+  browser = await chromium.launch({ timeout: 10_000 });
   server = http.createServer((request, response) => {
     if (request.url !== "/") {
       response.writeHead(404).end();
@@ -67,10 +70,13 @@ After(async function () {
 });
 
 AfterAll(async function () {
-  await browser?.close();
-  if (server?.listening) {
-    await new Promise((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
-    });
+  try {
+    await browser?.close();
+  } finally {
+    if (server?.listening) {
+      await new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   }
 });

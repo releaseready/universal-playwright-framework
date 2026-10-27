@@ -3,6 +3,8 @@ const { expect } = require("@playwright/test");
 
 Given("the demo page is open", async function () {
   this.page = await this.browser.newPage();
+  this.page.setDefaultTimeout(5_000);
+  this.page.setDefaultNavigationTimeout(10_000);
   await this.page.goto(this.baseUrl);
 });
 

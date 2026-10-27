@@ -17,6 +17,7 @@
     "test:parallel": "playwright test --workers=4",
     "pretest:features": "node -e \"require('node:fs').mkdirSync('reports', { recursive: true })\"",
     "test:features": "cucumber-js --config cucumber.js",
+    "test:features:regression": "node --test scripts/cucumber-timeouts.test.cjs",
     "report": "playwright show-report",
     "report:allure": "allure serve allure-results",
     "clean": "rimraf dist reports screenshots test-results",
