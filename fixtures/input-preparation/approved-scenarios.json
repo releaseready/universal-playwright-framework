@@ -25,8 +25,14 @@
     {
       "id": "approved-basic",
       "values": {
-        "displayName": "Synthetic Visitor",
-        "genres": ["ambient", "jazz"]
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Visitor"
+        },
+        "genres": {
+          "classification": "non-sensitive",
+          "value": ["ambient", "jazz"]
+        }
       },
       "accountReference": "synthetic-account-basic",
       "cleanup": {
@@ -38,9 +44,18 @@
     {
       "id": "approved-outline/row-a",
       "values": {
-        "action": "alpha",
-        "expectedOutcome": "ready",
-        "genres": ["ambient", "jazz"]
+        "action": {
+          "classification": "non-sensitive",
+          "value": "alpha"
+        },
+        "expectedOutcome": {
+          "classification": "non-sensitive",
+          "value": "ready"
+        },
+        "genres": {
+          "classification": "non-sensitive",
+          "value": ["ambient", "jazz"]
+        }
       },
       "accountReference": "synthetic-account-row-a",
       "cleanup": {
@@ -52,8 +67,14 @@
     {
       "id": "approved-outline/row-b",
       "values": {
-        "action": "beta",
-        "expectedOutcome": "done"
+        "action": {
+          "classification": "non-sensitive",
+          "value": "beta"
+        },
+        "expectedOutcome": {
+          "classification": "non-sensitive",
+          "value": "done"
+        }
       },
       "accountReference": "synthetic-account-row-b",
       "cleanup": {

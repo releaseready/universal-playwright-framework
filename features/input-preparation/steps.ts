@@ -139,7 +139,10 @@ Given(
     changeFixture(this, (input) => {
       const scenarios = input.scenarios as Record<string, unknown>[];
       const values = scenarios[0].values as Record<string, unknown>;
-      values.secretValue = "synthetic-only-value";
+      values.secretValue = {
+        classification: "secret",
+        value: "synthetic-only-value",
+      };
     });
     await loadReviewedScenarios(this);
   },

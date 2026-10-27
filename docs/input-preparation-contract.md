@@ -10,8 +10,9 @@ and account-reference copies.
 
 The inputs are bounded to 100 scenarios, 32 fields per scenario, 512 characters
 per text value, and 25 entries per text list. Each scenario requires at least
-one fixture field. Only approved synthetic fixture field names are accepted.
-Fixture values are trusted caller-provided, non-sensitive synthetic data;
+one fixture field. Each fixture field value must explicitly use the
+`non-sensitive` classification; the schema rejects secret-classified values and
+extra fields. Fixture values are still trusted caller-provided synthetic data;
 preparation does not infer whether an arbitrary string contains a secret. Errors
 describe the invalid category without echoing input values. The initial target
 must be an HTTP(S) URL on the approved origin, without credentials, query, or

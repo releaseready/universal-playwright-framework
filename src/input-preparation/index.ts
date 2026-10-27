@@ -9,12 +9,6 @@ import type { FeatureValidation } from "../validation/feature-validator";
 export const MAX_INPUT_DOCUMENT_BYTES = 64 * 1024;
 export const MAX_PREPARED_SCENARIOS = 100;
 
-const approvedFixtureFields = new Set([
-  "displayName",
-  "genres",
-  "action",
-  "expectedOutcome",
-]);
 const identifierSchema = z
   .string()
   .max(128)
@@ -27,12 +21,18 @@ const scenarioIdSchema = z
   .string()
   .max(128)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/);
-const fixtureValueSchema = z.union([
+const fixtureValueContentSchema = z.union([
   z.string().max(512),
   z.number().finite(),
   z.boolean(),
   z.array(z.string().max(512)).max(25),
 ]);
+const fixtureValueSchema = z
+  .object({
+    classification: z.literal("non-sensitive"),
+    value: fixtureValueContentSchema,
+  })
+  .strict();
 const fixtureValuesSchema = z
   .record(
     z
@@ -48,14 +48,6 @@ const fixtureValuesSchema = z
         code: "custom",
         message: "Fixture fields are missing or exceed the limit",
       });
-    }
-    for (const [field] of entries) {
-      if (!approvedFixtureFields.has(field)) {
-        context.addIssue({
-          code: "custom",
-          message: "Fixture contains an unapproved field",
-        });
-      }
     }
   });
 const environmentSchema = z
@@ -190,12 +182,20 @@ function parseOrigin(value: string): URL | undefined {
 }
 
 function copyValues(
-  values: Record<string, string | number | boolean | string[]>,
+  values: Record<
+    string,
+    {
+      classification: "non-sensitive";
+      value: string | number | boolean | string[];
+    }
+  >,
 ): Readonly<Record<string, string | number | boolean | readonly string[]>> {
   return Object.fromEntries(
-    Object.entries(values).map(([field, value]) => [
+    Object.entries(values).map(([field, fixtureValue]) => [
       field,
-      Array.isArray(value) ? [...value] : value,
+      Array.isArray(fixtureValue.value)
+        ? [...fixtureValue.value]
+        : fixtureValue.value,
     ]),
   );
 }
