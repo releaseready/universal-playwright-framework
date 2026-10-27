@@ -11,6 +11,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import {
+  DEFAULT_MAX_EXPANDED_SCENARIOS,
+  DEFAULT_MAX_EXPANDED_STEPS,
   MAX_FEATURE_BYTES,
   validateFeatureFile,
   type FeatureValidation,
@@ -95,7 +97,11 @@ test("validates synthetic feature metadata, inherited setup, tags, and example r
   assert.ok(basic);
   assert.equal(basic.name, "Basic synthetic flow");
   assert.equal(basic.runnable, true);
-  assert.ok(basic.tags.includes("@validation-synthetic"));
+  assert.equal(
+    basic.tags.filter((tag) => tag === "@validation-synthetic").length,
+    2,
+  );
+  assert.equal(basic.tags.filter((tag) => tag === "@basic-review").length, 2);
   assert.ok(basic.tags.includes("@rule-review"));
   assert.deepEqual(
     basic.steps.map((step) => step.implementationId),
@@ -108,7 +114,7 @@ test("validates synthetic feature metadata, inherited setup, tags, and example r
   assert.ok(rowA);
   assert.equal(rowA.name, "Synthetic example flow");
   assert.equal(rowA.exampleRow?.values.action, "alpha");
-  assert.ok(rowA.tags.includes("@row-review"));
+  assert.equal(rowA.tags.filter((tag) => tag === "@row-review").length, 2);
   assert.deepEqual(
     rowA.steps.map((step) => step.implementationId),
     ["common-setup", "rule-setup", "activate", "outcome"],
@@ -150,10 +156,7 @@ test("rejects unsafe paths, oversized input, malformed UTF-8, and invalid Gherki
       path.join(outsideWorkspace, "outside.feature"),
       "Feature: synthetic\n",
     );
-    symlinkSync(
-      path.join(outsideWorkspace, "outside.feature"),
-      path.join(workspace, "linked.feature"),
-    );
+    symlinkSync(outsideWorkspace, path.join(workspace, "linked"), "junction");
 
     const shared = {
       workspaceRoot: workspace,
@@ -172,7 +175,10 @@ test("rejects unsafe paths, oversized input, malformed UTF-8, and invalid Gherki
       /stay within the workspace/,
     );
     expectInvalid(
-      await validateFeatureFile({ ...shared, featurePath: "linked.feature" }),
+      await validateFeatureFile({
+        ...shared,
+        featurePath: "linked/outside.feature",
+      }),
       /stay within the workspace/,
     );
     expectInvalid(
@@ -199,6 +205,136 @@ test("rejects unsafe paths, oversized input, malformed UTF-8, and invalid Gherki
   } finally {
     rmSync(workspace, { recursive: true, force: true });
     rmSync(outsideWorkspace, { recursive: true, force: true });
+  }
+});
+
+test("enforces configurable AST expansion limits before compiling examples", async () => {
+  const workspace = createWorkspace();
+  try {
+    const featureFile = path.join(workspace, "expanded.feature");
+    const rowCount = 40;
+    const exampleRows = Array.from(
+      { length: rowCount },
+      (_unused, index) => `        | row-${index} | value${index} |`,
+    ).join("\n");
+    writeFileSync(
+      featureFile,
+      `Feature: bounded outline expansion
+  Background:
+    Given common setup is ready
+
+  @scenario-id=bounded-outline
+  Scenario Outline: bounded examples
+    When value is <value>
+
+    Examples:
+      | case_id | value |
+${exampleRows}
+`,
+    );
+    const input = {
+      workspaceRoot: workspace,
+      featurePath: "expanded.feature",
+      sourceRevision: "synthetic-expansion-revision",
+      manifest: {
+        implementationRevision: "expansion-steps",
+        steps: [
+          { id: "common", expression: "common setup is ready" },
+          { id: "value", expression: "value is {word}" },
+        ],
+      },
+    };
+
+    const withinLimits = await validateFeatureFile({
+      ...input,
+      limits: {
+        maxExpandedScenarios: rowCount,
+        maxExpandedSteps: rowCount * 2,
+      },
+    });
+    assert.equal(withinLimits.valid, true);
+    if (withinLimits.valid) {
+      assert.equal(withinLimits.scenarios.length, rowCount);
+      assert.ok(withinLimits.scenarios.every((scenario) => scenario.runnable));
+      assert.ok(
+        withinLimits.scenarios.every((scenario) => scenario.steps.length === 2),
+      );
+    }
+
+    const tooManyScenarios = await validateFeatureFile({
+      ...input,
+      limits: { maxExpandedScenarios: rowCount - 1 },
+    });
+    expectInvalid(tooManyScenarios, /Expanded scenario count exceeds/);
+
+    const tooManySteps = await validateFeatureFile({
+      ...input,
+      limits: {
+        maxExpandedScenarios: rowCount,
+        maxExpandedSteps: rowCount * 2 - 1,
+      },
+    });
+    expectInvalid(tooManySteps, /Expanded step count exceeds/);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("rejects compact scenario and step expansion exceeding default caps", async () => {
+  const workspace = createWorkspace();
+  try {
+    const featureFile = path.join(workspace, "compact-expansion.feature");
+    const rowCount = DEFAULT_MAX_EXPANDED_SCENARIOS + 1;
+    const exampleRows = Array.from(
+      { length: rowCount },
+      (_unused, index) => `        | row-${index} | value${index} |`,
+    ).join("\n");
+    writeFileSync(
+      featureFile,
+      `Feature: compact outline expansion
+  @scenario-id=compact-outline
+  Scenario Outline: many rows
+    Given common setup is ready
+    Examples:
+      | case_id | value |
+${exampleRows}
+`,
+    );
+    const result = await validateFeatureFile({
+      workspaceRoot: workspace,
+      featurePath: "compact-expansion.feature",
+      sourceRevision: "synthetic-expansion-revision",
+      manifest,
+    });
+    expectInvalid(
+      result,
+      new RegExp(
+        `Expanded scenario count exceeds the configured limit of ${DEFAULT_MAX_EXPANDED_SCENARIOS}`,
+      ),
+    );
+    const manyStepsPath = path.join(workspace, "many-steps.feature");
+    const stepCount = DEFAULT_MAX_EXPANDED_STEPS + 1;
+    writeFileSync(
+      manyStepsPath,
+      `Feature: compact step expansion
+  Scenario: many steps
+${Array.from({ length: stepCount }, () => "    Given x").join("\n")}
+`,
+    );
+    const manySteps = await validateFeatureFile({
+      workspaceRoot: workspace,
+      featurePath: "many-steps.feature",
+      sourceRevision: "synthetic-expansion-revision",
+      manifest,
+    });
+    expectInvalid(
+      manySteps,
+      new RegExp(
+        `Expanded step count exceeds the configured limit of ${DEFAULT_MAX_EXPANDED_STEPS}`,
+      ),
+    );
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
   }
 });
 
@@ -252,7 +388,14 @@ test("selects only approved IDs with matching tags and rejects empty or stale ap
     "approved-basic",
     "approved-outline/row-a",
   ]);
-  const selected = selectApprovedScenarios(validation, approval, {
+  const deduplicatedApproval: ScenarioApproval = {
+    ...approval,
+    scenarios: approval.scenarios.map((scenario) => ({
+      ...scenario,
+      tags: [...new Set(scenario.tags)],
+    })),
+  };
+  const selected = selectApprovedScenarios(validation, deduplicatedApproval, {
     scenarioIds: ["approved-outline/row-a"],
     tags: ["@rule-review", "@row-review"],
   });
@@ -262,6 +405,20 @@ test("selects only approved IDs with matching tags and rejects empty or stale ap
       selected.scenarios.map((scenario) => scenario.id),
       ["approved-outline/row-a"],
     );
+  }
+
+  const changedTagsApproval: ScenarioApproval = {
+    ...approval,
+    scenarios: approval.scenarios.map((scenario) =>
+      scenario.id === "approved-basic"
+        ? { ...scenario, tags: [...new Set([...scenario.tags, "@changed"])] }
+        : scenario,
+    ),
+  };
+  const changedTags = selectApprovedScenarios(validation, changedTagsApproval);
+  assert.equal(changedTags.runnable, false);
+  if (!changedTags.runnable) {
+    assert.match(changedTags.reason, /scenario or its tags changed/);
   }
 
   const noMatches = selectApprovedScenarios(validation, approval, {

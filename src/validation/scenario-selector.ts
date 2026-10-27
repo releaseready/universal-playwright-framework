@@ -30,8 +30,11 @@ export type ScenarioSelection =
     };
 
 function sameTags(left: readonly string[], right: readonly string[]): boolean {
+  const leftTags = new Set(left);
+  const rightTags = new Set(right);
   return (
-    left.length === right.length && left.every((tag) => right.includes(tag))
+    leftTags.size === rightTags.size &&
+    [...leftTags].every((tag) => rightTags.has(tag))
   );
 }
 

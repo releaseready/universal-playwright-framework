@@ -1,4 +1,5 @@
 @validation-synthetic
+@validation-synthetic
 Feature: Synthetic review intake
   Background: shared setup
     Given common setup is ready
@@ -9,6 +10,7 @@ Feature: Synthetic review intake
       Given rule setup is ready
 
     @scenario-id=approved-basic @basic-review
+    @basic-review
     Scenario: Basic synthetic flow
       Given the demo page is open
 
@@ -17,6 +19,7 @@ Feature: Synthetic review intake
       When I activate <action>
       Then outcome is <outcome>
 
+      @row-review
       @row-review
       Examples: reviewed rows
         | case_id | action | outcome |

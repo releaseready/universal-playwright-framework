@@ -14,8 +14,17 @@ import {
 } from "@cucumber/cucumber-expressions";
 
 export const MAX_FEATURE_BYTES = 256 * 1024;
+export const DEFAULT_MAX_EXPANDED_SCENARIOS = 1_000;
+export const DEFAULT_MAX_EXPANDED_STEPS = 10_000;
+export const MAX_CONFIGURABLE_EXPANDED_SCENARIOS = 10_000;
+export const MAX_CONFIGURABLE_EXPANDED_STEPS = 100_000;
 const SCENARIO_ID_TAG = "@scenario-id=";
 const STABLE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+export interface FeatureValidationLimits {
+  readonly maxExpandedScenarios?: number;
+  readonly maxExpandedSteps?: number;
+}
 
 export interface ReviewedStep {
   readonly id: string;
@@ -69,6 +78,18 @@ export interface ValidateFeatureInput {
   readonly featurePath: string;
   readonly sourceRevision: string;
   readonly manifest: ReviewedStepManifest;
+  readonly limits?: FeatureValidationLimits;
+}
+
+type ParsedFeature = NonNullable<
+  ReturnType<Parser<unknown>["parse"]>["feature"]
+>;
+type FeatureChild = ParsedFeature["children"][number];
+type ScenarioNode = NonNullable<FeatureChild["scenario"]>;
+
+interface EffectiveFeatureValidationLimits {
+  readonly maxExpandedScenarios: number;
+  readonly maxExpandedSteps: number;
 }
 
 interface CompiledReviewedStep {
@@ -116,9 +137,6 @@ function getDescriptorPath(fileDescriptor: number): string | undefined {
   if (process.platform === "linux") {
     return `/proc/self/fd/${fileDescriptor}`;
   }
-  if (process.platform === "darwin") {
-    return `/dev/fd/${fileDescriptor}`;
-  }
   return undefined;
 }
 
@@ -160,6 +178,11 @@ async function readFeatureFile(
       return { reason: "Feature path must stay within the workspace" };
     }
 
+    const expectedStats = await stat(canonicalPath);
+    if (!expectedStats.isFile()) {
+      return { reason: "Feature path must identify a regular file" };
+    }
+
     const openFlags =
       fsConstants.O_RDONLY |
       (fsConstants.O_NONBLOCK ?? 0) |
@@ -169,18 +192,21 @@ async function readFeatureFile(
     if (!fileStats.isFile()) {
       return { reason: "Feature path must identify a regular file" };
     }
+    if (!isSameFile(expectedStats, fileStats)) {
+      return { reason: "Feature path changed while it was being opened" };
+    }
     const descriptorPath = getDescriptorPath(handle.fd);
-    if (!descriptorPath) {
+    let verifiedPath: string;
+    if (descriptorPath) {
+      verifiedPath = await realpath(descriptorPath);
+    } else if (process.platform === "darwin") {
+      verifiedPath = await realpath(canonicalPath);
+    } else {
       return {
         reason:
           "Workspace-safe file descriptor verification is unavailable on this platform",
       };
     }
-    const openedPath = await realpath(descriptorPath);
-    if (!isWithinDirectory(workspacePath, openedPath)) {
-      return { reason: "Feature path must stay within the workspace" };
-    }
-    const verifiedPath = await realpath(unresolvedPath);
     if (!isWithinDirectory(workspacePath, verifiedPath)) {
       return { reason: "Feature path must stay within the workspace" };
     }
@@ -272,6 +298,105 @@ function parseErrorMessage(error: unknown): string {
   return `Feature contains invalid Gherkin at line ${location.line}${column}`;
 }
 
+function getEffectiveLimits(
+  limits: FeatureValidationLimits | undefined,
+): EffectiveFeatureValidationLimits | { reason: string } {
+  if (limits !== undefined && (typeof limits !== "object" || limits === null)) {
+    return { reason: "Feature validation limits must be an object" };
+  }
+  const maxExpandedScenarios =
+    limits?.maxExpandedScenarios ?? DEFAULT_MAX_EXPANDED_SCENARIOS;
+  const maxExpandedSteps =
+    limits?.maxExpandedSteps ?? DEFAULT_MAX_EXPANDED_STEPS;
+  if (
+    !Number.isSafeInteger(maxExpandedScenarios) ||
+    maxExpandedScenarios < 1 ||
+    maxExpandedScenarios > MAX_CONFIGURABLE_EXPANDED_SCENARIOS
+  ) {
+    return {
+      reason: `maxExpandedScenarios must be an integer from 1 to ${MAX_CONFIGURABLE_EXPANDED_SCENARIOS}`,
+    };
+  }
+  if (
+    !Number.isSafeInteger(maxExpandedSteps) ||
+    maxExpandedSteps < 1 ||
+    maxExpandedSteps > MAX_CONFIGURABLE_EXPANDED_STEPS
+  ) {
+    return {
+      reason: `maxExpandedSteps must be an integer from 1 to ${MAX_CONFIGURABLE_EXPANDED_STEPS}`,
+    };
+  }
+  return { maxExpandedScenarios, maxExpandedSteps };
+}
+
+function getExpansionLimitError(
+  feature: ParsedFeature,
+  limits: EffectiveFeatureValidationLimits,
+): string | undefined {
+  const featureBackgroundStepCount =
+    feature.children.find((child) => child.background)?.background?.steps
+      .length ?? 0;
+  let expandedScenarios = 0;
+  let expandedSteps = 0;
+
+  const countScenario = (
+    scenario: ScenarioNode,
+    ruleBackgroundStepCount: number,
+  ): string | undefined => {
+    const rowCount =
+      scenario.examples.length === 0
+        ? 1
+        : scenario.examples.reduce(
+            (total, examples) => total + examples.tableBody.length,
+            0,
+          );
+    if (expandedScenarios + rowCount > limits.maxExpandedScenarios) {
+      return `Expanded scenario count exceeds the configured limit of ${limits.maxExpandedScenarios}`;
+    }
+
+    const stepsPerRow =
+      featureBackgroundStepCount +
+      ruleBackgroundStepCount +
+      scenario.steps.length;
+    const addedSteps = rowCount * stepsPerRow;
+    if (
+      !Number.isSafeInteger(addedSteps) ||
+      expandedSteps + addedSteps > limits.maxExpandedSteps
+    ) {
+      return `Expanded step count exceeds the configured limit of ${limits.maxExpandedSteps}`;
+    }
+    expandedScenarios += rowCount;
+    expandedSteps += addedSteps;
+    return undefined;
+  };
+
+  for (const child of feature.children) {
+    if (child.scenario) {
+      const error = countScenario(child.scenario, 0);
+      if (error) {
+        return error;
+      }
+    }
+    if (child.rule) {
+      const ruleBackgroundStepCount =
+        child.rule.children.find((ruleChild) => ruleChild.background)
+          ?.background?.steps.length ?? 0;
+      for (const ruleChild of child.rule.children) {
+        if (ruleChild.scenario) {
+          const error = countScenario(
+            ruleChild.scenario,
+            ruleBackgroundStepCount,
+          );
+          if (error) {
+            return error;
+          }
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
 function compileManifest(
   manifest: ReviewedStepManifest,
 ): { steps: readonly CompiledReviewedStep[] } | { reason: string } {
@@ -349,6 +474,11 @@ export async function validateFeatureFile(
     return { valid: false, reason: "A source revision is required" };
   }
 
+  const limits = getEffectiveLimits(input.limits);
+  if ("reason" in limits) {
+    return { valid: false, reason: limits.reason };
+  }
+
   const compiledManifest = compileManifest(input.manifest);
   if ("reason" in compiledManifest) {
     return { valid: false, reason: compiledManifest.reason };
@@ -372,7 +502,6 @@ export async function validateFeatureFile(
     .join("/");
   const parserIds = makeIdGenerator();
   let document;
-  let pickles;
   try {
     const parser = new Parser(
       new AstBuilder(parserIds),
@@ -385,7 +514,6 @@ export async function validateFeatureFile(
         reason: "Feature file does not contain a Feature",
       };
     }
-    pickles = compile(document, featurePath, makeIdGenerator());
   } catch (error) {
     return { valid: false, reason: parseErrorMessage(error) };
   }
@@ -394,8 +522,18 @@ export async function validateFeatureFile(
     return { valid: false, reason: "Feature file does not contain a Feature" };
   }
 
-  type FeatureChild = (typeof document.feature.children)[number];
-  type ScenarioNode = NonNullable<FeatureChild["scenario"]>;
+  const expansionLimitError = getExpansionLimitError(document.feature, limits);
+  if (expansionLimitError) {
+    return { valid: false, reason: expansionLimitError };
+  }
+
+  let pickles;
+  try {
+    pickles = compile(document, featurePath, makeIdGenerator());
+  } catch (error) {
+    return { valid: false, reason: parseErrorMessage(error) };
+  }
+
   const scenarioMetadataByNodeId = new Map<string, ScenarioMetadata>();
   const exampleRowsByNodeId = new Map<string, ExampleRowMetadata>();
   const scenarioIdCounts = new Map<string, number>();
