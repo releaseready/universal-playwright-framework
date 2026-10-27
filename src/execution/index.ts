@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { chromium, type BrowserServer } from "@playwright/test";
 import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -28,7 +29,16 @@ export type ExecutionStatus =
   | "incomplete"
   | "timed_out"
   | "cancelled";
-export type ResourceCleanupStatus = "confirmed" | "failed" | "unknown";
+export type ResourceCleanupStatus =
+  | "not_required"
+  | "confirmed"
+  | "failed"
+  | "unknown";
+type WorkerStopReason =
+  | "scenario-timeout"
+  | "run-timeout"
+  | "cancelled"
+  | "cleanup-unknown";
 
 export interface ScenarioExecutionResult {
   readonly scenarioId: string;
@@ -36,6 +46,8 @@ export interface ScenarioExecutionResult {
   readonly cleanupStatus: ResourceCleanupStatus;
   readonly cleanupFailures: readonly string[];
   readonly cleanupFaultInjected: boolean;
+  readonly workerStopped: boolean;
+  readonly workerStallInjected: boolean;
 }
 
 export interface ExecutionSummary {
@@ -44,6 +56,9 @@ export interface ExecutionSummary {
   readonly resourceCleanup: {
     readonly status: ResourceCleanupStatus;
     readonly failures: readonly string[];
+    readonly browserProcessStopped: boolean | null;
+    readonly blockedTargetRequestCount: number;
+    readonly injectedPendingCleanup: boolean;
   };
   readonly dataRestoration: {
     readonly status: "unknown";
@@ -58,7 +73,8 @@ export interface ExecutionOptions {
   readonly scenarioTimeoutMs?: number;
   readonly maxConcurrentScenarios?: number;
   readonly signal?: AbortSignal;
-  readonly testCleanupFailure?: "context";
+  readonly testCleanupFailure?: "context" | "server-pending" | "worker-stall";
+  readonly onBrowserProcessStarted?: (pid: number) => void;
 }
 
 interface FixtureDocument {
@@ -76,12 +92,18 @@ interface WorkerPayload {
     readonly values: PreparedInputDescriptor["scenarios"][number]["values"];
   };
   readonly environment: PreparedInputDescriptor["environment"];
+  readonly redirectTargetUrl: string;
 }
 
 interface CleanupReport {
   readonly status: ResourceCleanupStatus;
   readonly failures: readonly string[];
   readonly injectedFailure: boolean;
+}
+
+interface BrowserStopResult {
+  readonly stopped: boolean;
+  readonly injectedPendingClose: boolean;
 }
 
 const CUCUMBER_BIN = path.join(
@@ -144,10 +166,33 @@ async function startFixtureServer(): Promise<{
   readonly server: Server;
   readonly sockets: Set<Socket>;
   readonly origin: string;
+  readonly redirectServer: Server;
+  readonly redirectSockets: Set<Socket>;
+  readonly redirectTargetUrl: string;
+  readonly blockedTargetRequestCount: () => number;
 }> {
+  let blockedTargetRequestCount = 0;
+  const redirectServer = createServer((_request, response) => {
+    blockedTargetRequestCount += 1;
+    response.writeHead(200).end();
+  });
+  const redirectSockets = new Set<Socket>();
+  redirectServer.on("connection", (socket) => {
+    redirectSockets.add(socket);
+    socket.once("close", () => redirectSockets.delete(socket));
+  });
+  await new Promise<void>((resolve, reject) => {
+    redirectServer.once("error", reject);
+    redirectServer.listen(0, "127.0.0.1", resolve);
+  });
+  const redirectAddress = redirectServer.address();
+  if (!redirectAddress || typeof redirectAddress === "string") {
+    throw new Error("Owned redirect-destination server did not start");
+  }
+  const redirectTargetUrl = `http://127.0.0.1:${redirectAddress.port}/blocked`;
   const server = createServer((request, response) => {
     if (request.url === "/redirect") {
-      response.writeHead(302, { location: "http://192.0.2.1/" }).end();
+      response.writeHead(302, { location: redirectTargetUrl }).end();
       return;
     }
     if (request.url !== "/demo") {
@@ -176,71 +221,90 @@ async function startFixtureServer(): Promise<{
     sockets.add(socket);
     socket.once("close", () => sockets.delete(socket));
   });
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Owned synthetic server did not start");
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Owned synthetic server did not start");
+    }
+    return {
+      server,
+      sockets,
+      origin: `http://127.0.0.1:${address.port}`,
+      redirectServer,
+      redirectSockets,
+      redirectTargetUrl,
+      blockedTargetRequestCount: () => blockedTargetRequestCount,
+    };
+  } catch (error) {
+    await closeServer(redirectServer, redirectSockets);
+    throw error;
   }
-  return { server, sockets, origin: `http://127.0.0.1:${address.port}` };
 }
 
 function closeServer(
   server: Server | undefined,
   sockets: ReadonlySet<Socket>,
-): Promise<void> {
+  ignoreCallback = false,
+): Promise<{ readonly closed: boolean; readonly injectedPending: boolean }> {
   if (!server) {
-    return Promise.resolve();
+    return Promise.resolve({ closed: true, injectedPending: false });
   }
-  return new Promise<void>((resolve, reject) => {
+  return new Promise((resolve) => {
     let settled = false;
-    let destroyTimer: ReturnType<typeof setTimeout> | undefined;
-    let failureTimer: ReturnType<typeof setTimeout> | undefined;
-    const finish = (error?: Error): void => {
+    let injectedTimer: ReturnType<typeof setTimeout> | undefined;
+    let forceTimer: ReturnType<typeof setTimeout> | undefined;
+    let finalTimer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (closed: boolean): void => {
       if (settled) {
         return;
       }
       settled = true;
-      if (destroyTimer) {
-        clearTimeout(destroyTimer);
-      }
-      if (failureTimer) {
-        clearTimeout(failureTimer);
-      }
-      if (error) {
-        reject(error);
-      } else {
-        resolve();
-      }
-    };
-    if (!server.listening) {
-      for (const socket of sockets) {
-        socket.destroy();
-      }
-      void (async () => {
-        const deadline = Date.now() + 1_000;
-        while (sockets.size > 0 && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 20));
+      for (const timer of [injectedTimer, forceTimer, finalTimer]) {
+        if (timer) {
+          clearTimeout(timer);
         }
-        finish(
-          sockets.size === 0
-            ? undefined
-            : new Error("Owned synthetic server shutdown is unknown"),
-        );
-      })();
-      return;
+      }
+      resolve({ closed, injectedPending: ignoreCallback });
+    };
+    const verifyStopped = (): boolean =>
+      !server.listening && sockets.size === 0;
+    const initiateClose = (observeCallback: boolean): void => {
+      if (!server.listening) {
+        if (verifyStopped()) {
+          finish(true);
+        }
+        return;
+      }
+      server.close((error) => {
+        if (observeCallback) {
+          if (!error && verifyStopped()) {
+            finish(true);
+          }
+        }
+      });
+    };
+    if (ignoreCallback) {
+      initiateClose(false);
+      injectedTimer = setTimeout(() => {
+        if (verifyStopped()) {
+          finish(true);
+        }
+      }, 200);
+    } else {
+      initiateClose(true);
     }
-    server.close((error) => finish(error));
-    destroyTimer = setTimeout(() => {
+    forceTimer = setTimeout(() => {
       for (const socket of sockets) {
         socket.destroy();
       }
-      failureTimer = setTimeout(
-        () => finish(new Error("Owned synthetic server shutdown is unknown")),
-        1_000,
-      );
+      if (server.listening) {
+        initiateClose(true);
+      }
+      finalTimer = setTimeout(() => finish(verifyStopped()), 500);
     }, 1_000);
   });
 }
@@ -297,20 +361,22 @@ async function terminateOwnedProcess(child: ChildProcess): Promise<boolean> {
     process.kill(-pid, "SIGTERM");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ESRCH") {
-      return true;
+      return waitForChildExit(child, 500);
     }
   }
   if (await waitForGroupExit(pid, 300)) {
-    return true;
+    return waitForChildExit(child, 500);
   }
   try {
     process.kill(-pid, "SIGKILL");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ESRCH") {
-      return true;
+      return waitForChildExit(child, 500);
     }
   }
-  return waitForGroupExit(pid, 1_000);
+  return (
+    (await waitForGroupExit(pid, 1_000)) && (await waitForChildExit(child, 500))
+  );
 }
 
 async function waitForChildExit(
@@ -326,6 +392,35 @@ async function waitForChildExit(
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   return child.exitCode !== null || child.signalCode !== null;
+}
+
+async function stopBrowserServer(
+  browserServer: BrowserServer,
+  testPendingClose = false,
+): Promise<BrowserStopResult> {
+  const browserProcess = browserServer.process();
+  const close = testPendingClose
+    ? new Promise<void>(() => {})
+    : browserServer.close();
+  void close.catch(() => {});
+  if (await waitForChildExit(browserProcess, testPendingClose ? 200 : 1_500)) {
+    return { stopped: true, injectedPendingClose: testPendingClose };
+  }
+
+  const kill = browserServer.kill();
+  void kill.catch(() => {});
+  if (await waitForChildExit(browserProcess, 1_000)) {
+    return { stopped: true, injectedPendingClose: testPendingClose };
+  }
+  browserProcess.kill("SIGTERM");
+  if (await waitForChildExit(browserProcess, 500)) {
+    return { stopped: true, injectedPendingClose: testPendingClose };
+  }
+  browserProcess.kill("SIGKILL");
+  return {
+    stopped: await waitForChildExit(browserProcess, 1_000),
+    injectedPendingClose: testPendingClose,
+  };
 }
 
 function safeCleanupReport(reportPath: string): CleanupReport | undefined {
@@ -374,6 +469,7 @@ function workerEnvironment(
   payload: WorkerPayload,
   cleanupPath: string,
   testCleanupFailure: ExecutionOptions["testCleanupFailure"],
+  browserEndpoint: string,
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const name of [
@@ -395,16 +491,28 @@ function workerEnvironment(
   env.CUCUMBER_STEP_TIMEOUT_MS = String(MAX_SCENARIO_TIMEOUT_MS);
   env.WEB_EXECUTION_PAYLOAD = JSON.stringify(payload);
   env.WEB_EXECUTION_CLEANUP_PATH = cleanupPath;
+  env.WEB_EXECUTION_BROWSER_ENDPOINT = browserEndpoint;
   if (testCleanupFailure) {
     env.WEB_EXECUTION_TEST_CLEANUP_FAILURE = testCleanupFailure;
   }
   return env;
 }
 
+function stoppedStatus(
+  reason: WorkerStopReason,
+  workerStopped: boolean,
+): ExecutionStatus {
+  if (reason === "scenario-timeout" || reason === "run-timeout") {
+    return "timed_out";
+  }
+  return reason === "cancelled" && workerStopped ? "cancelled" : "failed";
+}
+
 async function executeScenario(
   scenarioId: string,
   payload: WorkerPayload,
   temporaryDirectory: string,
+  browserEndpoint: string,
   timeoutMs: number,
   runSignal: AbortSignal,
   testCleanupFailure: ExecutionOptions["testCleanupFailure"],
@@ -430,7 +538,12 @@ async function executeScenario(
       cwd: REPOSITORY_ROOT,
       detached: process.platform !== "win32",
       stdio: "ignore",
-      env: workerEnvironment(payload, cleanupPath, testCleanupFailure),
+      env: workerEnvironment(
+        payload,
+        cleanupPath,
+        testCleanupFailure,
+        browserEndpoint,
+      ),
     },
   );
   const spawned = new Promise<boolean>((resolve) => {
@@ -495,38 +608,39 @@ async function executeScenario(
   clearTimeout(timeout);
   runSignal.removeEventListener("abort", onRunAbort);
   if ("terminated" in outcome) {
+    const workerStopped =
+      outcome.terminated && (await waitForChildExit(child, 500));
     return {
       scenarioId,
-      status:
-        stopReason === "scenario-timeout" || stopReason === "run-timeout"
-          ? "timed_out"
-          : stopReason === "cancelled"
-            ? "cancelled"
-            : "failed",
+      status: stoppedStatus(stopReason ?? "cleanup-unknown", workerStopped),
       cleanupStatus: "unknown",
       cleanupFailures: [
-        outcome.terminated
+        workerStopped
           ? "owned-process-terminated"
           : "owned-process-state-unknown",
       ],
       cleanupFaultInjected: false,
+      workerStopped,
+      workerStallInjected: testCleanupFailure === "worker-stall",
     };
   }
   const completion = outcome.completion;
   const terminated = termination ? await termination : true;
 
   if (stopReason) {
+    const workerStopped = terminated && (await waitForChildExit(child, 500));
     return {
       scenarioId,
-      status:
-        stopReason === "scenario-timeout" || stopReason === "run-timeout"
-          ? "timed_out"
-          : "cancelled",
+      status: stoppedStatus(stopReason, workerStopped),
       cleanupStatus: "unknown",
       cleanupFailures: [
-        terminated ? "owned-process-terminated" : "owned-process-state-unknown",
+        workerStopped
+          ? "owned-process-terminated"
+          : "owned-process-state-unknown",
       ],
       cleanupFaultInjected: false,
+      workerStopped,
+      workerStallInjected: testCleanupFailure === "worker-stall",
     };
   }
   if (completion.spawnFailed) {
@@ -536,6 +650,8 @@ async function executeScenario(
       cleanupStatus: "unknown",
       cleanupFailures: ["worker-start"],
       cleanupFaultInjected: false,
+      workerStopped: true,
+      workerStallInjected: testCleanupFailure === "worker-stall",
     };
   }
 
@@ -555,6 +671,8 @@ async function executeScenario(
     cleanupStatus: cleanup?.status ?? "unknown",
     cleanupFailures: cleanup?.failures ?? ["cleanup-evidence-missing"],
     cleanupFaultInjected: cleanup?.injectedFailure ?? false,
+    workerStopped: true,
+    workerStallInjected: testCleanupFailure === "worker-stall",
   };
 }
 
@@ -564,11 +682,14 @@ function aggregateCleanup(
 ): ResourceCleanupStatus {
   if (
     results.some((result) => result.cleanupStatus === "failed") ||
-    runFailures.length > 0
+    runFailures.includes("temporary-report-cleanup")
   ) {
     return "failed";
   }
-  if (results.some((result) => result.cleanupStatus === "unknown")) {
+  if (
+    results.some((result) => result.cleanupStatus === "unknown") ||
+    runFailures.length > 0
+  ) {
     return "unknown";
   }
   return "confirmed";
@@ -580,11 +701,20 @@ function summary(
   scenarios: readonly ScenarioExecutionResult[],
   cleanupStatus: ResourceCleanupStatus,
   cleanupFailures: readonly string[] = [],
+  browserProcessStopped: boolean | null = null,
+  blockedTargetRequestCount = 0,
+  injectedPendingCleanup = false,
 ): ExecutionSummary {
   return {
     diagnosticReference,
     status,
-    resourceCleanup: { status: cleanupStatus, failures: cleanupFailures },
+    resourceCleanup: {
+      status: cleanupStatus,
+      failures: cleanupFailures,
+      browserProcessStopped,
+      blockedTargetRequestCount,
+      injectedPendingCleanup,
+    },
     dataRestoration: { status: "unknown", operationPerformed: false },
     scenarios,
   };
@@ -608,15 +738,26 @@ export async function executeReviewedScenarios(
   }
 
   const results: ScenarioExecutionResult[] = [];
-  const runFailures: string[] = [];
+  const cleanupFailures: string[] = [];
   let server: Server | undefined;
   let serverSockets: Set<Socket> = new Set();
+  let redirectServer: Server | undefined;
+  let redirectSockets: Set<Socket> = new Set();
+  let blockedTargetRequestCount: (() => number) | undefined;
+  let browserServer: BrowserServer | undefined;
+  let browserProcessStopped: boolean | null = null;
+  let browserLaunchUncertain = false;
+  let serverPendingCloseInjected = false;
+  let resourcesAcquired = false;
   let temporaryDirectory: string | undefined;
   let status: ExecutionStatus = "incomplete";
   try {
     if (runController.signal.aborted) {
-      status = "cancelled";
-      return summary(diagnosticReference, status, results, "unknown");
+      status =
+        runController.signal.reason === "run-timeout"
+          ? "timed_out"
+          : "cancelled";
+      return summary(diagnosticReference, status, results, "not_required");
     }
     const { approval, validation } = await loadReviewedScenarios();
     const filters = options.scenarioIds
@@ -624,10 +765,20 @@ export async function executeReviewedScenarios(
       : { tags: ["@web-safe-execution-S01"] };
     const selection = selectApprovedScenarios(validation, approval, filters);
     if (!selection.runnable) {
-      return summary(diagnosticReference, "incomplete", results, "confirmed");
+      return summary(
+        diagnosticReference,
+        "incomplete",
+        results,
+        "not_required",
+      );
     }
     if (selection.scenarios.length > MAX_EXECUTION_SCENARIOS) {
-      return summary(diagnosticReference, "incomplete", results, "confirmed");
+      return summary(
+        diagnosticReference,
+        "incomplete",
+        results,
+        "not_required",
+      );
     }
     if (runController.signal.aborted) {
       return summary(
@@ -636,13 +787,17 @@ export async function executeReviewedScenarios(
           ? "timed_out"
           : "cancelled",
         results,
-        "unknown",
+        "not_required",
       );
     }
 
     const localRuntime = await startFixtureServer();
     server = localRuntime.server;
     serverSockets = localRuntime.sockets;
+    redirectServer = localRuntime.redirectServer;
+    redirectSockets = localRuntime.redirectSockets;
+    blockedTargetRequestCount = localRuntime.blockedTargetRequestCount;
+    resourcesAcquired = true;
     const selectedIds = selection.scenarios.map(
       (scenario) => scenario.id as string,
     );
@@ -656,6 +811,22 @@ export async function executeReviewedScenarios(
     temporaryDirectory = mkdtempSync(
       path.join(tmpdir(), `rrdweb4-${diagnosticReference}-`),
     );
+    try {
+      browserServer = await chromium.launchServer({
+        host: "127.0.0.1",
+        headless: true,
+        timeout: 10_000,
+      });
+      const browserProcessId = browserServer.process().pid;
+      if (!browserProcessId) {
+        browserLaunchUncertain = true;
+        throw new Error("Owned browser process identity is unavailable");
+      }
+      options.onBrowserProcessStarted?.(browserProcessId);
+    } catch (error) {
+      browserLaunchUncertain = true;
+      throw error;
+    }
     let nextScenario = 0;
     const workers = Array.from(
       { length: Math.min(concurrency, selection.scenarios.length) },
@@ -676,6 +847,8 @@ export async function executeReviewedScenarios(
               cleanupStatus: "unknown",
               cleanupFailures: ["prepared-input-missing"],
               cleanupFaultInjected: false,
+              workerStopped: true,
+              workerStallInjected: false,
             };
             continue;
           }
@@ -685,20 +858,23 @@ export async function executeReviewedScenarios(
               values: prepared.values,
             },
             environment: descriptor.environment,
+            redirectTargetUrl: localRuntime.redirectTargetUrl,
           };
           results[index] = await executeScenario(
             scenario.id as string,
             payload,
             temporaryDirectory!,
+            browserServer!.wsEndpoint(),
             scenarioTimeoutMs,
             runController.signal,
             options.testCleanupFailure,
           );
-          if (
-            results[index].cleanupStatus !== "confirmed" &&
-            !runController.signal.aborted
-          ) {
-            runController.abort("cleanup-unknown");
+          if (!runController.signal.aborted) {
+            if (results[index].status === "timed_out") {
+              runController.abort("run-timeout");
+            } else if (results[index].cleanupStatus !== "confirmed") {
+              runController.abort("cleanup-unknown");
+            }
           }
         }
       },
@@ -718,6 +894,8 @@ export async function executeReviewedScenarios(
           cleanupStatus: "unknown",
           cleanupFailures: ["scenario-not-started"],
           cleanupFaultInjected: false,
+          workerStopped: true,
+          workerStallInjected: false,
         };
       }
     }
@@ -735,30 +913,92 @@ export async function executeReviewedScenarios(
           ? "timed_out"
           : "failed";
   } catch {
-    status = runController.signal.aborted
-      ? runController.signal.reason === "run-timeout"
+    status =
+      runController.signal.reason === "run-timeout"
         ? "timed_out"
-        : "cancelled"
-      : "incomplete";
-    runFailures.push("execution-or-cleanup-failed");
+        : runController.signal.reason === "cancelled"
+          ? "cancelled"
+          : "incomplete";
   } finally {
     clearTimeout(runTimer);
     options.signal?.removeEventListener("abort", onAbort);
+    if (browserServer) {
+      try {
+        const browserStop = await stopBrowserServer(
+          browserServer,
+          options.testCleanupFailure === "server-pending",
+        );
+        browserProcessStopped = browserStop.stopped;
+        serverPendingCloseInjected = browserStop.injectedPendingClose;
+        if (!browserStop.stopped) {
+          cleanupFailures.push("browser-process-state-unknown");
+        }
+      } catch {
+        browserProcessStopped = false;
+        cleanupFailures.push("browser-process-state-unknown");
+      }
+    } else if (browserLaunchUncertain) {
+      cleanupFailures.push("browser-launch-state-unknown");
+    }
     try {
-      await closeServer(server, serverSockets);
+      const fixtureServer = await closeServer(
+        server,
+        serverSockets,
+        options.testCleanupFailure === "server-pending",
+      );
+      serverPendingCloseInjected ||= fixtureServer.injectedPending;
+      if (!fixtureServer.closed) {
+        cleanupFailures.push("fixture-server-state-unknown");
+      }
     } catch {
-      runFailures.push("owned-server-close");
+      cleanupFailures.push("fixture-server-close");
+    }
+    try {
+      const redirectClose = await closeServer(redirectServer, redirectSockets);
+      if (!redirectClose.closed) {
+        cleanupFailures.push("redirect-server-state-unknown");
+      }
+    } catch {
+      cleanupFailures.push("redirect-server-close");
     }
     if (temporaryDirectory) {
       try {
         rmSync(temporaryDirectory, { recursive: true });
       } catch {
-        runFailures.push("temporary-report-cleanup");
+        cleanupFailures.push("temporary-report-cleanup");
       }
     }
   }
-  const cleanupStatus = aggregateCleanup(results, runFailures);
+  if (
+    browserProcessStopped === true &&
+    cleanupFailures.length === 0 &&
+    !browserLaunchUncertain
+  ) {
+    for (const result of results) {
+      if (result.workerStopped && result.cleanupStatus === "unknown") {
+        (result as { cleanupStatus: ResourceCleanupStatus }).cleanupStatus =
+          "confirmed";
+      }
+    }
+  }
+  const cleanupStatus = !resourcesAcquired
+    ? "not_required"
+    : browserLaunchUncertain || browserProcessStopped === false
+      ? "unknown"
+      : aggregateCleanup(results, cleanupFailures);
+  for (const result of results) {
+    if (result.status === "cancelled" && cleanupStatus !== "confirmed") {
+      (result as { status: ExecutionStatus }).status = "failed";
+    }
+  }
   if (cleanupStatus !== "confirmed" && status === "passed") {
+    status = "failed";
+  }
+  if (
+    status === "cancelled" &&
+    (cleanupStatus !== "confirmed" ||
+      results.some((result) => !result.workerStopped))
+  ) {
     status = "failed";
   }
   return summary(
@@ -766,6 +1006,9 @@ export async function executeReviewedScenarios(
     status,
     results,
     cleanupStatus,
-    runFailures,
+    cleanupFailures,
+    browserProcessStopped,
+    blockedTargetRequestCount?.() ?? 0,
+    serverPendingCloseInjected,
   );
 }

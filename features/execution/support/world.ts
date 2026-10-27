@@ -9,6 +9,7 @@ export interface ExecutionPayload {
     readonly approvedOrigin: string;
     readonly initialTargetUrl: string;
   };
+  readonly redirectTargetUrl: string;
 }
 
 export interface ExecutionWorld {
@@ -17,4 +18,5 @@ export interface ExecutionWorld {
   page?: Page;
   payload?: ExecutionPayload;
   blockedDestinations: string[];
+  redirectNavigationBlocked?: boolean;
 }

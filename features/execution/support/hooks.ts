@@ -20,7 +20,7 @@ let browser: Browser | undefined;
 let payload: ExecutionPayload | undefined;
 let cleanupPath: string | undefined;
 let contextClosed = false;
-let browserClosed = false;
+let browserDisconnected = false;
 let injectedFailure = false;
 
 class CucumberExecutionWorld extends World implements ExecutionWorld {
@@ -54,10 +54,12 @@ function parsePayload(value: string | undefined): ExecutionPayload {
   const candidate = parsed as Partial<ExecutionPayload>;
   const target = candidate.environment?.initialTargetUrl;
   const origin = candidate.environment?.approvedOrigin;
+  const redirectTarget = candidate.redirectTargetUrl;
   const scenario = candidate.scenario;
   if (
     typeof target !== "string" ||
     typeof origin !== "string" ||
+    typeof redirectTarget !== "string" ||
     typeof scenario?.id !== "string" ||
     typeof scenario.values?.displayName !== "string"
   ) {
@@ -65,12 +67,16 @@ function parsePayload(value: string | undefined): ExecutionPayload {
   }
   const targetUrl = new URL(target);
   const approvedOrigin = new URL(origin);
+  const redirectUrl = new URL(redirectTarget);
   if (
     !["http:", "https:"].includes(targetUrl.protocol) ||
     targetUrl.origin !== approvedOrigin.origin ||
     approvedOrigin.hostname !== "127.0.0.1" ||
     targetUrl.username !== "" ||
-    targetUrl.password !== ""
+    targetUrl.password !== "" ||
+    redirectUrl.protocol !== "http:" ||
+    redirectUrl.hostname !== "127.0.0.1" ||
+    redirectUrl.origin === approvedOrigin.origin
   ) {
     throw new Error("Execution target is outside the owned loopback origin");
   }
@@ -79,12 +85,19 @@ function parsePayload(value: string | undefined): ExecutionPayload {
 
 BeforeAll(async function () {
   payload = parsePayload(process.env.WEB_EXECUTION_PAYLOAD);
+  const endpoint = process.env.WEB_EXECUTION_BROWSER_ENDPOINT;
+  if (!endpoint) {
+    throw new Error("Owned browser server endpoint is missing");
+  }
   const destination = process.env.WEB_EXECUTION_CLEANUP_PATH;
   if (!destination || !path.isAbsolute(destination)) {
     throw new Error("Execution cleanup report path is missing");
   }
   cleanupPath = destination;
-  browser = await chromium.launch({ timeout: 10_000 });
+  browser = await chromium.connect(endpoint, { timeout: 10_000 });
+  if (process.env.WEB_EXECUTION_TEST_CLEANUP_FAILURE === "worker-stall") {
+    await new Promise<void>(() => {});
+  }
 });
 
 Before(async function (
@@ -126,9 +139,7 @@ Before(async function (
         if (location) {
           try {
             const redirected = new URL(location, destination);
-            if (redirected.origin !== payload?.environment.approvedOrigin) {
-              this.blockedDestinations.push(redirected.href);
-            }
+            this.blockedDestinations.push(redirected.href);
           } catch {
             this.blockedDestinations.push("invalid-redirect");
           }
@@ -169,7 +180,7 @@ AfterAll(async function () {
   if (browser) {
     try {
       await browser.close();
-      browserClosed = true;
+      browserDisconnected = true;
     } catch {
       failures.push("browser-close");
     }
@@ -180,7 +191,7 @@ AfterAll(async function () {
     ? "unknown"
     : failures.length > 0
       ? "failed"
-      : contextClosed && browserClosed
+      : contextClosed && browserDisconnected
         ? "confirmed"
         : "unknown";
   try {

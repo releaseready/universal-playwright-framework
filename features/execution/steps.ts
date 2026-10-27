@@ -70,20 +70,20 @@ When(
     if (!this.page || !this.payload) {
       throw new Error("Synthetic browser page is unavailable");
     }
+    let navigationFailed = false;
     try {
       await this.page.goto(
         new URL("/redirect", this.payload.environment.approvedOrigin).href,
       );
     } catch {
-      assert.ok(
-        this.blockedDestinations.includes("http://192.0.2.1/"),
-        "The unapproved redirect must be intercepted before connection",
-      );
+      navigationFailed = true;
     }
+    this.redirectNavigationBlocked = navigationFailed;
   },
 );
 
 Then("the unapproved navigation was blocked", function (this: ExecutionWorld) {
-  assert.deepEqual(this.blockedDestinations, ["http://192.0.2.1/"]);
+  assert.equal(this.redirectNavigationBlocked, true);
+  assert.deepEqual(this.blockedDestinations, [this.payload?.redirectTargetUrl]);
   assert.equal(this.page?.url(), this.payload?.environment.initialTargetUrl);
 });

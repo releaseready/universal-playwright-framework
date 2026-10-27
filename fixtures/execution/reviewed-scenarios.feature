@@ -24,6 +24,7 @@ Feature: Execute reviewed synthetic scenarios
   @scenario-id=timeout-flow @web-safe-execution-S03
   Scenario: An overlong action is stopped by the run boundary
     Given the synthetic reviewed page is open
+    When I enter the prepared display name
     When I wait for 5000 milliseconds
     Then the synthetic page confirms the prepared display name
 
