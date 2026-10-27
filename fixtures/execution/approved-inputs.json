@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "fixtureRevision": "synthetic-execution-fixtures-1",
+  "environment": {
+    "id": "synthetic-execution",
+    "revision": "loopback-only-1",
+    "approvedOrigin": "http://127.0.0.1",
+    "initialTargetUrl": "http://127.0.0.1/demo"
+  },
+  "accounts": [
+    {
+      "reference": "synthetic-browser",
+      "secretReference": "unused-synthetic-reference"
+    },
+    {
+      "reference": "synthetic-assertion",
+      "secretReference": "unused-synthetic-reference"
+    },
+    {
+      "reference": "synthetic-pending",
+      "secretReference": "unused-synthetic-reference"
+    },
+    {
+      "reference": "synthetic-undefined",
+      "secretReference": "unused-synthetic-reference"
+    },
+    {
+      "reference": "synthetic-timeout",
+      "secretReference": "unused-synthetic-reference"
+    },
+    {
+      "reference": "synthetic-redirect",
+      "secretReference": "unused-synthetic-reference"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "browser-flow",
+      "values": {
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Visitor"
+        }
+      },
+      "accountReference": "synthetic-browser",
+      "cleanup": {
+        "reference": "synthetic-cleanup-browser",
+        "authorizationRevision": "unverified-cleanup-1",
+        "requested": true
+      }
+    },
+    {
+      "id": "assertion-failure",
+      "values": {
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Assertion"
+        }
+      },
+      "accountReference": "synthetic-assertion",
+      "cleanup": {
+        "reference": "synthetic-cleanup-assertion",
+        "authorizationRevision": "unverified-cleanup-1",
+        "requested": true
+      }
+    },
+    {
+      "id": "pending-flow",
+      "values": {
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Pending"
+        }
+      },
+      "accountReference": "synthetic-pending",
+      "cleanup": {
+        "reference": "synthetic-cleanup-pending",
+        "authorizationRevision": "unverified-cleanup-1",
+        "requested": true
+      }
+    },
+    {
+      "id": "undefined-flow",
+      "values": {
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Undefined"
+        }
+      },
+      "accountReference": "synthetic-undefined",
+      "cleanup": {
+        "reference": "synthetic-cleanup-undefined",
+        "authorizationRevision": "unverified-cleanup-1",
+        "requested": true
+      }
+    },
+    {
+      "id": "timeout-flow",
+      "values": {
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Timeout"
+        }
+      },
+      "accountReference": "synthetic-timeout",
+      "cleanup": {
+        "reference": "synthetic-cleanup-timeout",
+        "authorizationRevision": "unverified-cleanup-1",
+        "requested": true
+      }
+    },
+    {
+      "id": "redirect-flow",
+      "values": {
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Redirect"
+        }
+      },
+      "accountReference": "synthetic-redirect",
+      "cleanup": {
+        "reference": "synthetic-cleanup-redirect",
+        "authorizationRevision": "unverified-cleanup-1",
+        "requested": true
+      }
+    }
+  ]
+}

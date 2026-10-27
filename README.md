@@ -28,3 +28,7 @@ npm run test
 ## Standalone synthetic Cucumber scenario
 
 Run the local, assertion-backed Gherkin + Playwright example without an application account or external target. See the [synthetic Cucumber setup and results guide](docs/synthetic-cucumber.md).
+
+## Reviewed synthetic execution adapter
+
+Run reviewed scenarios with bounded, isolated local browser sessions. See the [synthetic execution guide](docs/synthetic-execution.md).

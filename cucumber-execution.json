@@ -1,0 +1,10 @@
+{
+  "default": {
+    "paths": ["fixtures/execution/reviewed-scenarios.feature"],
+    "require": [
+      "dist/cucumber/features/execution/support/hooks.js",
+      "dist/cucumber/features/execution/steps.js"
+    ],
+    "format": ["progress"]
+  }
+}
