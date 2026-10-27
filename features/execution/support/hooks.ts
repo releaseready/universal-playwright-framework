@@ -119,7 +119,28 @@ Before(async function (
       await route.abort("blockedbyclient");
       return;
     }
-    await route.continue();
+    try {
+      const response = await route.fetch({ maxRedirects: 0 });
+      if (response.status() >= 300 && response.status() < 400) {
+        const location = response.headers().location;
+        if (location) {
+          try {
+            const redirected = new URL(location, destination);
+            if (redirected.origin !== payload?.environment.approvedOrigin) {
+              this.blockedDestinations.push(redirected.href);
+            }
+          } catch {
+            this.blockedDestinations.push("invalid-redirect");
+          }
+        }
+        await route.abort("blockedbyclient");
+        await response.dispose();
+        return;
+      }
+      await route.fulfill({ response });
+    } catch {
+      await route.abort("failed");
+    }
   });
   this.page = await this.context.newPage();
   this.page.setDefaultTimeout(5_000);

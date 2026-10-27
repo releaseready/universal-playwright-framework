@@ -8,18 +8,39 @@
     "initialTargetUrl": "http://127.0.0.1/demo"
   },
   "accounts": [
-    { "reference": "synthetic-browser", "secretReference": "unused-synthetic-reference" },
-    { "reference": "synthetic-assertion", "secretReference": "unused-synthetic-reference" },
-    { "reference": "synthetic-pending", "secretReference": "unused-synthetic-reference" },
-    { "reference": "synthetic-undefined", "secretReference": "unused-synthetic-reference" },
-    { "reference": "synthetic-timeout", "secretReference": "unused-synthetic-reference" },
-    { "reference": "synthetic-redirect", "secretReference": "unused-synthetic-reference" }
+    {
+      "reference": "synthetic-browser",
+      "secretReference": "unused-synthetic-reference"
+    },
+    {
+      "reference": "synthetic-assertion",
+      "secretReference": "unused-synthetic-reference"
+    },
+    {
+      "reference": "synthetic-pending",
+      "secretReference": "unused-synthetic-reference"
+    },
+    {
+      "reference": "synthetic-undefined",
+      "secretReference": "unused-synthetic-reference"
+    },
+    {
+      "reference": "synthetic-timeout",
+      "secretReference": "unused-synthetic-reference"
+    },
+    {
+      "reference": "synthetic-redirect",
+      "secretReference": "unused-synthetic-reference"
+    }
   ],
   "scenarios": [
     {
       "id": "browser-flow",
       "values": {
-        "displayName": { "classification": "non-sensitive", "value": "Synthetic Visitor" }
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Visitor"
+        }
       },
       "accountReference": "synthetic-browser",
       "cleanup": {
@@ -31,7 +52,10 @@
     {
       "id": "assertion-failure",
       "values": {
-        "displayName": { "classification": "non-sensitive", "value": "Synthetic Assertion" }
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Assertion"
+        }
       },
       "accountReference": "synthetic-assertion",
       "cleanup": {
@@ -43,7 +67,10 @@
     {
       "id": "pending-flow",
       "values": {
-        "displayName": { "classification": "non-sensitive", "value": "Synthetic Pending" }
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Pending"
+        }
       },
       "accountReference": "synthetic-pending",
       "cleanup": {
@@ -55,7 +82,10 @@
     {
       "id": "undefined-flow",
       "values": {
-        "displayName": { "classification": "non-sensitive", "value": "Synthetic Undefined" }
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Undefined"
+        }
       },
       "accountReference": "synthetic-undefined",
       "cleanup": {
@@ -67,7 +97,10 @@
     {
       "id": "timeout-flow",
       "values": {
-        "displayName": { "classification": "non-sensitive", "value": "Synthetic Timeout" }
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Timeout"
+        }
       },
       "accountReference": "synthetic-timeout",
       "cleanup": {
@@ -79,7 +112,10 @@
     {
       "id": "redirect-flow",
       "values": {
-        "displayName": { "classification": "non-sensitive", "value": "Synthetic Redirect" }
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Redirect"
+        }
       },
       "accountReference": "synthetic-redirect",
       "cleanup": {

@@ -11,18 +11,25 @@ import type { ReviewedFixtureFieldPolicy } from "../input-preparation";
 export const REPOSITORY_ROOT = path.resolve(__dirname, "../../../..");
 export const REVIEWED_FEATURE_PATH =
   "fixtures/execution/reviewed-scenarios.feature";
-export const INPUT_FIXTURE_PATH =
-  "fixtures/execution/approved-inputs.json";
+export const INPUT_FIXTURE_PATH = "fixtures/execution/approved-inputs.json";
 
 const REVIEWED_SOURCE_REVISION = "rrdweb4-synthetic-source-1";
-const REVIEWED_FEATURE_REVISION = "TO_BE_PINNED";
-const REVIEWED_IMPLEMENTATION_REVISION = "TO_BE_PINNED";
+const REVIEWED_FEATURE_REVISION =
+  "9232a10c99c3f579738c0a34eea95f362e7c976ee4a801aa8b3e11112ee077d7";
+const REVIEWED_IMPLEMENTATION_REVISION =
+  "c0d3dbe09b89a1803c49cfc55396dd42585d86004f422b7590224dc9a3524f97";
 
 const stepManifest: ReviewedStepManifest = {
   implementationRevision: REVIEWED_IMPLEMENTATION_REVISION,
   steps: [
-    { id: "open-synthetic-page", expression: "the synthetic reviewed page is open" },
-    { id: "enter-prepared-name", expression: "I enter the prepared display name" },
+    {
+      id: "open-synthetic-page",
+      expression: "the synthetic reviewed page is open",
+    },
+    {
+      id: "enter-prepared-name",
+      expression: "I enter the prepared display name",
+    },
     {
       id: "confirm-prepared-name",
       expression: "the synthetic page confirms the prepared display name",
@@ -65,11 +72,19 @@ function hashFile(relativePath: string): string {
 function hashImplementation(): string {
   const hash = createHash("sha256");
   for (const relativePath of [
+    "cucumber-execution.json",
+    "src/execution/index.ts",
     "features/execution/steps.ts",
     "features/execution/support/hooks.ts",
   ]) {
-    hash.update(readFileSync(path.join(REPOSITORY_ROOT, relativePath)));
+    hash.update(relativePath).update("\0");
+    hash.update(readFileSync(path.join(REPOSITORY_ROOT, relativePath))).update(
+      "\0",
+    );
   }
+  hash.update(JSON.stringify(stepManifest.steps)).update("\0");
+  hash.update(JSON.stringify(reviewedFixturePolicy)).update("\0");
+  hash.update(readFileSync(path.join(REPOSITORY_ROOT, INPUT_FIXTURE_PATH)));
   return hash.digest("hex");
 }
 

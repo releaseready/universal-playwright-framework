@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
+import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -87,7 +88,7 @@ const CUCUMBER_BIN = path.join(
   REPOSITORY_ROOT,
   "node_modules/@cucumber/cucumber/bin/cucumber.js",
 );
-const CUCUMBER_CONFIG = path.join(REPOSITORY_ROOT, "cucumber-execution.json");
+const CUCUMBER_CONFIG = "cucumber-execution.json";
 const DEFAULT_RUN_TIMEOUT_MS = 90_000;
 const DEFAULT_SCENARIO_TIMEOUT_MS = 30_000;
 
@@ -141,6 +142,7 @@ function makeFixtureInput(
 
 async function startFixtureServer(): Promise<{
   readonly server: Server;
+  readonly sockets: Set<Socket>;
   readonly origin: string;
 }> {
   const server = createServer((request, response) => {
@@ -169,6 +171,11 @@ async function startFixtureServer(): Promise<{
         </body>
       </html>`);
   });
+  const sockets = new Set<Socket>();
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+  });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
@@ -177,15 +184,64 @@ async function startFixtureServer(): Promise<{
   if (!address || typeof address === "string") {
     throw new Error("Owned synthetic server did not start");
   }
-  return { server, origin: `http://127.0.0.1:${address.port}` };
+  return { server, sockets, origin: `http://127.0.0.1:${address.port}` };
 }
 
-function closeServer(server: Server | undefined): Promise<void> {
-  if (!server?.listening) {
+function closeServer(
+  server: Server | undefined,
+  sockets: ReadonlySet<Socket>,
+): Promise<void> {
+  if (!server) {
     return Promise.resolve();
   }
   return new Promise<void>((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()));
+    let settled = false;
+    let destroyTimer: ReturnType<typeof setTimeout> | undefined;
+    let failureTimer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (error?: Error): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (destroyTimer) {
+        clearTimeout(destroyTimer);
+      }
+      if (failureTimer) {
+        clearTimeout(failureTimer);
+      }
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+    if (!server.listening) {
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      void (async () => {
+        const deadline = Date.now() + 1_000;
+        while (sockets.size > 0 && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        finish(
+          sockets.size === 0
+            ? undefined
+            : new Error("Owned synthetic server shutdown is unknown"),
+        );
+      })();
+      return;
+    }
+    server.close((error) => finish(error));
+    destroyTimer = setTimeout(() => {
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      failureTimer = setTimeout(
+        () => finish(new Error("Owned synthetic server shutdown is unknown")),
+        1_000,
+      );
+    }, 1_000);
   });
 }
 
@@ -198,7 +254,10 @@ function groupExists(pid: number): boolean {
   }
 }
 
-async function waitForGroupExit(pid: number, timeoutMs: number): Promise<boolean> {
+async function waitForGroupExit(
+  pid: number,
+  timeoutMs: number,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (!groupExists(pid)) {
@@ -209,14 +268,23 @@ async function waitForGroupExit(pid: number, timeoutMs: number): Promise<boolean
   return !groupExists(pid);
 }
 
-async function terminateOwnedProcess(
-  child: ChildProcess,
-): Promise<boolean> {
+async function terminateOwnedProcess(child: ChildProcess): Promise<boolean> {
   const pid = child.pid;
   if (!pid) {
     return true;
   }
   if (process.platform === "win32") {
+    const treeTerminated = await new Promise<boolean>((resolve) => {
+      execFile(
+        "taskkill.exe",
+        ["/PID", String(pid), "/T", "/F"],
+        { timeout: 3_000, windowsHide: true },
+        (error) => resolve(!error),
+      );
+    });
+    if (treeTerminated) {
+      return waitForChildExit(child, 1_000);
+    }
     child.kill("SIGTERM");
     const exited = await waitForChildExit(child, 300);
     if (!exited) {
@@ -262,12 +330,15 @@ async function waitForChildExit(
 
 function safeCleanupReport(reportPath: string): CleanupReport | undefined {
   try {
-    const report = JSON.parse(readFileSync(reportPath, "utf8")) as Partial<CleanupReport>;
+    const report = JSON.parse(
+      readFileSync(reportPath, "utf8"),
+    ) as Partial<CleanupReport>;
     if (
       !["confirmed", "failed", "unknown"].includes(String(report.status)) ||
       !Array.isArray(report.failures) ||
       report.failures.some(
-        (failure) => typeof failure !== "string" || !/^[a-z-]{1,48}$/.test(failure),
+        (failure) =>
+          typeof failure !== "string" || !/^[a-z-]{1,48}$/.test(failure),
       ) ||
       typeof report.injectedFailure !== "boolean"
     ) {
@@ -282,7 +353,10 @@ function safeCleanupReport(reportPath: string): CleanupReport | undefined {
 function cucumberScenarioPassed(reportPath: string): boolean | undefined {
   try {
     const features = JSON.parse(readFileSync(reportPath, "utf8")) as {
-      elements?: { type?: string; steps?: { result?: { status?: string } }[] }[];
+      elements?: {
+        type?: string;
+        steps?: { result?: { status?: string } }[];
+      }[];
     }[];
     const scenarios = features.flatMap((feature) =>
       (feature.elements ?? []).filter((element) => element.type === "scenario"),
@@ -290,9 +364,7 @@ function cucumberScenarioPassed(reportPath: string): boolean | undefined {
     if (scenarios.length !== 1 || !scenarios[0].steps?.length) {
       return undefined;
     }
-    return scenarios[0].steps.every(
-      (step) => step.result?.status === "passed",
-    );
+    return scenarios[0].steps.every((step) => step.result?.status === "passed");
   } catch {
     return undefined;
   }
@@ -338,7 +410,10 @@ async function executeScenario(
   testCleanupFailure: ExecutionOptions["testCleanupFailure"],
 ): Promise<ScenarioExecutionResult> {
   const reportPath = path.join(temporaryDirectory, `${scenarioId}.json`);
-  const cleanupPath = path.join(temporaryDirectory, `${scenarioId}.cleanup.json`);
+  const cleanupPath = path.join(
+    temporaryDirectory,
+    `${scenarioId}.cleanup.json`,
+  );
   const child = spawn(
     process.execPath,
     [
@@ -362,53 +437,91 @@ async function executeScenario(
     child.once("spawn", () => resolve(true));
     child.once("error", () => resolve(false));
   });
-  let stopReason: "scenario-timeout" | "run-timeout" | "cancelled" | undefined;
+  let resolveTermination: ((terminated: boolean) => void) | undefined;
+  const terminationCompleted = new Promise<boolean>((resolve) => {
+    resolveTermination = resolve;
+  });
+  let stopReason:
+    | "scenario-timeout"
+    | "run-timeout"
+    | "cancelled"
+    | "cleanup-unknown"
+    | undefined;
   let termination: Promise<boolean> | undefined;
   const requestStop = (
-    reason: "scenario-timeout" | "run-timeout" | "cancelled",
+    reason:
+      | "scenario-timeout"
+      | "run-timeout"
+      | "cancelled"
+      | "cleanup-unknown",
   ): void => {
-    if (
-      stopReason ||
-      child.exitCode !== null ||
-      child.signalCode !== null
-    ) {
+    if (stopReason || child.exitCode !== null || child.signalCode !== null) {
       return;
     }
     stopReason = reason;
     termination = spawned.then((didSpawn) =>
       didSpawn ? terminateOwnedProcess(child) : true,
     );
+    void termination.then(
+      (terminated) => resolveTermination?.(terminated),
+      () => resolveTermination?.(false),
+    );
   };
-  const timeout = setTimeout(
-    () => requestStop("scenario-timeout"),
-    timeoutMs,
-  );
+  const timeout = setTimeout(() => requestStop("scenario-timeout"), timeoutMs);
   const onRunAbort = (): void => {
     requestStop(
-      runSignal.reason === "run-timeout" ? "run-timeout" : "cancelled",
+      runSignal.reason === "run-timeout"
+        ? "run-timeout"
+        : runSignal.reason === "cleanup-unknown"
+          ? "cleanup-unknown"
+          : "cancelled",
     );
   };
   runSignal.addEventListener("abort", onRunAbort);
   if (runSignal.aborted) {
     onRunAbort();
   }
-  const completion = await new Promise<{
+  const completionPromise = new Promise<{
     readonly code: number | null;
     readonly spawnFailed: boolean;
   }>((resolve) => {
     child.once("error", () => resolve({ code: null, spawnFailed: true }));
     child.once("exit", (code) => resolve({ code, spawnFailed: false }));
   });
+  const outcome = await Promise.race([
+    completionPromise.then((completion) => ({ completion })),
+    terminationCompleted.then((terminated) => ({ terminated })),
+  ]);
   clearTimeout(timeout);
   runSignal.removeEventListener("abort", onRunAbort);
+  if ("terminated" in outcome) {
+    return {
+      scenarioId,
+      status:
+        stopReason === "scenario-timeout" || stopReason === "run-timeout"
+          ? "timed_out"
+          : stopReason === "cancelled"
+            ? "cancelled"
+            : "failed",
+      cleanupStatus: "unknown",
+      cleanupFailures: [
+        outcome.terminated
+          ? "owned-process-terminated"
+          : "owned-process-state-unknown",
+      ],
+      cleanupFaultInjected: false,
+    };
+  }
+  const completion = outcome.completion;
   const terminated = termination ? await termination : true;
 
   if (stopReason) {
     return {
       scenarioId,
-      status: stopReason === "scenario-timeout" || stopReason === "run-timeout"
-        ? "timed_out"
-        : "cancelled",
+      status:
+        stopReason === "scenario-timeout" || stopReason === "run-timeout"
+          ? "timed_out"
+          : "cancelled",
       cleanupStatus: "unknown",
       cleanupFailures: [
         terminated ? "owned-process-terminated" : "owned-process-state-unknown",
@@ -431,7 +544,9 @@ async function executeScenario(
   const status =
     scenarioPassed === undefined
       ? "incomplete"
-      : completion.code === 0 && scenarioPassed && cleanup?.status === "confirmed"
+      : completion.code === 0 &&
+          scenarioPassed &&
+          cleanup?.status === "confirmed"
         ? "passed"
         : "failed";
   return {
@@ -495,6 +610,7 @@ export async function executeReviewedScenarios(
   const results: ScenarioExecutionResult[] = [];
   const runFailures: string[] = [];
   let server: Server | undefined;
+  let serverSockets: Set<Socket> = new Set();
   let temporaryDirectory: string | undefined;
   let status: ExecutionStatus = "incomplete";
   try {
@@ -516,7 +632,9 @@ export async function executeReviewedScenarios(
     if (runController.signal.aborted) {
       return summary(
         diagnosticReference,
-        runController.signal.reason === "run-timeout" ? "timed_out" : "cancelled",
+        runController.signal.reason === "run-timeout"
+          ? "timed_out"
+          : "cancelled",
         results,
         "unknown",
       );
@@ -524,6 +642,7 @@ export async function executeReviewedScenarios(
 
     const localRuntime = await startFixtureServer();
     server = localRuntime.server;
+    serverSockets = localRuntime.sockets;
     const selectedIds = selection.scenarios.map(
       (scenario) => scenario.id as string,
     );
@@ -575,16 +694,27 @@ export async function executeReviewedScenarios(
             runController.signal,
             options.testCleanupFailure,
           );
+          if (
+            results[index].cleanupStatus !== "confirmed" &&
+            !runController.signal.aborted
+          ) {
+            runController.abort("cleanup-unknown");
+          }
         }
       },
     );
     await Promise.all(workers);
     for (let index = 0; index < selection.scenarios.length; index += 1) {
       if (!results[index]) {
-        const runTimedOut = runController.signal.reason === "run-timeout";
+        const stopReason = runController.signal.reason;
         results[index] = {
           scenarioId: selection.scenarios[index].id ?? "unidentified",
-          status: runTimedOut ? "timed_out" : "cancelled",
+          status:
+            stopReason === "run-timeout"
+              ? "timed_out"
+              : stopReason === "cancelled"
+                ? "cancelled"
+                : "incomplete",
           cleanupStatus: "unknown",
           cleanupFailures: ["scenario-not-started"],
           cleanupFaultInjected: false,
@@ -594,7 +724,11 @@ export async function executeReviewedScenarios(
     status = runController.signal.aborted
       ? runController.signal.reason === "run-timeout"
         ? "timed_out"
-        : "cancelled"
+        : runController.signal.reason === "cancelled"
+          ? "cancelled"
+          : results.some((result) => result.status === "timed_out")
+            ? "timed_out"
+            : "failed"
       : results.every((result) => result.status === "passed")
         ? "passed"
         : results.some((result) => result.status === "timed_out")
@@ -611,7 +745,7 @@ export async function executeReviewedScenarios(
     clearTimeout(runTimer);
     options.signal?.removeEventListener("abort", onAbort);
     try {
-      await closeServer(server);
+      await closeServer(server, serverSockets);
     } catch {
       runFailures.push("owned-server-close");
     }
