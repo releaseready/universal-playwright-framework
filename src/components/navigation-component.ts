@@ -2,8 +2,8 @@
  * Navigation component for common navigation interactions
  */
 
-import { Page, Locator } from '@playwright/test';
-import { BaseComponent } from './base-component';
+import { Page, Locator } from "@playwright/test";
+import { BaseComponent } from "./base-component";
 
 export class NavigationComponent extends BaseComponent {
   private readonly logoLocator: Locator;
@@ -13,11 +13,17 @@ export class NavigationComponent extends BaseComponent {
 
   constructor(page: Page) {
     super(page, '[data-testid="navigation"]');
-    
+
     this.logoLocator = this.rootLocator.locator('[data-testid="logo"]');
-    this.menuToggleLocator = this.rootLocator.locator('[data-testid="menu-toggle"]');
-    this.userMenuLocator = this.rootLocator.locator('[data-testid="user-menu"]');
-    this.logoutButtonLocator = this.rootLocator.locator('[data-testid="logout-button"]');
+    this.menuToggleLocator = this.rootLocator.locator(
+      '[data-testid="menu-toggle"]',
+    );
+    this.userMenuLocator = this.rootLocator.locator(
+      '[data-testid="user-menu"]',
+    );
+    this.logoutButtonLocator = this.rootLocator.locator(
+      '[data-testid="logout-button"]',
+    );
   }
 
   /**
@@ -25,7 +31,7 @@ export class NavigationComponent extends BaseComponent {
    */
   async clickLogo(): Promise<void> {
     await this.logoLocator.click();
-    this.logger.info('Clicked on logo');
+    this.logger.info("Clicked on logo");
   }
 
   /**
@@ -33,14 +39,16 @@ export class NavigationComponent extends BaseComponent {
    */
   async toggleMobileMenu(): Promise<void> {
     await this.menuToggleLocator.click();
-    this.logger.info('Toggled mobile menu');
+    this.logger.info("Toggled mobile menu");
   }
 
   /**
    * Navigate to a menu item
    */
   async navigateToMenuItem(itemName: string): Promise<void> {
-    const menuItem = this.rootLocator.locator(`[data-testid="menu-item-${itemName.toLowerCase()}"]`);
+    const menuItem = this.rootLocator.locator(
+      `[data-testid="menu-item-${itemName.toLowerCase()}"]`,
+    );
     await menuItem.click();
     this.logger.info(`Navigated to menu item: ${itemName}`);
   }
@@ -50,7 +58,7 @@ export class NavigationComponent extends BaseComponent {
    */
   async openUserMenu(): Promise<void> {
     await this.userMenuLocator.click();
-    this.logger.info('Opened user menu');
+    this.logger.info("Opened user menu");
   }
 
   /**
@@ -59,7 +67,7 @@ export class NavigationComponent extends BaseComponent {
   async logout(): Promise<void> {
     await this.openUserMenu();
     await this.logoutButtonLocator.click();
-    this.logger.info('User logged out');
+    this.logger.info("User logged out");
   }
 
   /**
