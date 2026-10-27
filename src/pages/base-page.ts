@@ -3,15 +3,15 @@
  * Provides common functionality and utilities for page interactions
  */
 
-import { Page, Locator, expect } from '@playwright/test';
-import { Logger } from '@utils/logger';
+import { Page, Locator, expect } from "@playwright/test";
+import { Logger } from "@utils/logger";
 
 export abstract class BasePage {
   protected page: Page;
   protected logger: Logger;
   protected url: string;
 
-  constructor(page: Page, url: string = '') {
+  constructor(page: Page, url: string = "") {
     this.page = page;
     this.url = url;
     this.logger = new Logger(this.constructor.name);
@@ -30,8 +30,8 @@ export abstract class BasePage {
    * Wait for page to be fully loaded
    */
   async waitForPageLoad(): Promise<void> {
-    await this.page.waitForLoadState('networkidle');
-    await this.page.waitForLoadState('domcontentloaded');
+    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
   }
 
   /**
@@ -52,33 +52,42 @@ export abstract class BasePage {
    * Take screenshot
    */
   async takeScreenshot(name?: string): Promise<Buffer> {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const filename = name || `screenshot-${timestamp}`;
     this.logger.info(`Taking screenshot: ${filename}`);
-    return await this.page.screenshot({ 
+    return await this.page.screenshot({
       path: `screenshots/${filename}.png`,
-      fullPage: true 
+      fullPage: true,
     });
   }
 
   /**
    * Wait for element to be visible
    */
-  async waitForElement(locator: Locator, timeout: number = 30000): Promise<void> {
-    await locator.waitFor({ state: 'visible', timeout });
+  async waitForElement(
+    locator: Locator,
+    timeout: number = 30000,
+  ): Promise<void> {
+    await locator.waitFor({ state: "visible", timeout });
   }
 
   /**
    * Wait for element to be hidden
    */
-  async waitForElementToHide(locator: Locator, timeout: number = 30000): Promise<void> {
-    await locator.waitFor({ state: 'hidden', timeout });
+  async waitForElementToHide(
+    locator: Locator,
+    timeout: number = 30000,
+  ): Promise<void> {
+    await locator.waitFor({ state: "hidden", timeout });
   }
 
   /**
    * Click element with retry logic
    */
-  async clickElement(locator: Locator, options?: { timeout?: number; force?: boolean }): Promise<void> {
+  async clickElement(
+    locator: Locator,
+    options?: { timeout?: number; force?: boolean },
+  ): Promise<void> {
     await this.waitForElement(locator);
     await locator.click(options);
     this.logger.info(`Clicked element: ${locator}`);
@@ -87,7 +96,11 @@ export abstract class BasePage {
   /**
    * Fill input field
    */
-  async fillInput(locator: Locator, value: string, options?: { clear?: boolean }): Promise<void> {
+  async fillInput(
+    locator: Locator,
+    value: string,
+    options?: { clear?: boolean },
+  ): Promise<void> {
     await this.waitForElement(locator);
     if (options?.clear) {
       await locator.clear();
@@ -99,7 +112,10 @@ export abstract class BasePage {
   /**
    * Select option from dropdown
    */
-  async selectOption(locator: Locator, value: string | string[]): Promise<void> {
+  async selectOption(
+    locator: Locator,
+    value: string | string[],
+  ): Promise<void> {
     await this.waitForElement(locator);
     await locator.selectOption(value);
     this.logger.info(`Selected option: ${value}`);
@@ -111,7 +127,7 @@ export abstract class BasePage {
   async getElementText(locator: Locator): Promise<string> {
     await this.waitForElement(locator);
     const text = await locator.textContent();
-    return text?.trim() || '';
+    return text?.trim() || "";
   }
 
   /**
@@ -119,7 +135,7 @@ export abstract class BasePage {
    */
   async isElementVisible(locator: Locator): Promise<boolean> {
     try {
-      await locator.waitFor({ state: 'visible', timeout: 5000 });
+      await locator.waitFor({ state: "visible", timeout: 5000 });
       return true;
     } catch {
       return false;
@@ -131,7 +147,7 @@ export abstract class BasePage {
    */
   async isElementPresent(locator: Locator): Promise<boolean> {
     try {
-      await locator.waitFor({ state: 'attached', timeout: 5000 });
+      await locator.waitFor({ state: "attached", timeout: 5000 });
       return true;
     } catch {
       return false;
@@ -141,13 +157,18 @@ export abstract class BasePage {
   /**
    * Wait for URL to change
    */
-  async waitForUrlChange(expectedUrl?: string, timeout: number = 30000): Promise<void> {
+  async waitForUrlChange(
+    expectedUrl?: string,
+    timeout: number = 30000,
+  ): Promise<void> {
     if (expectedUrl) {
       await this.page.waitForURL(expectedUrl, { timeout });
     } else {
       // Wait for any URL change
       const currentUrl = this.getCurrentUrl();
-      await this.page.waitForURL(url => url.toString() !== currentUrl, { timeout });
+      await this.page.waitForURL((url) => url.toString() !== currentUrl, {
+        timeout,
+      });
     }
   }
 
@@ -182,7 +203,7 @@ export abstract class BasePage {
    */
   async rightClickElement(locator: Locator): Promise<void> {
     await this.waitForElement(locator);
-    await locator.click({ button: 'right' });
+    await locator.click({ button: "right" });
     this.logger.info(`Right clicked element: ${locator}`);
   }
 
@@ -197,10 +218,13 @@ export abstract class BasePage {
   /**
    * Handle dialog (alert, confirm, prompt)
    */
-  async handleDialog(accept: boolean = true, promptText?: string): Promise<void> {
-    this.page.on('dialog', async dialog => {
+  async handleDialog(
+    accept: boolean = true,
+    promptText?: string,
+  ): Promise<void> {
+    this.page.on("dialog", async (dialog) => {
       this.logger.info(`Dialog appeared: ${dialog.message()}`);
-      if (dialog.type() === 'prompt' && promptText) {
+      if (dialog.type() === "prompt" && promptText) {
         await dialog.accept(promptText);
       } else if (accept) {
         await dialog.accept();
@@ -215,10 +239,10 @@ export abstract class BasePage {
    */
   async handleNewPage(): Promise<Page> {
     const [newPage] = await Promise.all([
-      this.page.context().waitForEvent('page'),
+      this.page.context().waitForEvent("page"),
     ]);
     await newPage.waitForLoadState();
-    this.logger.info('New page opened');
+    this.logger.info("New page opened");
     return newPage;
   }
 
@@ -228,7 +252,7 @@ export abstract class BasePage {
   async reloadPage(): Promise<void> {
     await this.page.reload();
     await this.waitForPageLoad();
-    this.logger.info('Page reloaded');
+    this.logger.info("Page reloaded");
   }
 
   /**
@@ -237,7 +261,7 @@ export abstract class BasePage {
   async goBack(): Promise<void> {
     await this.page.goBack();
     await this.waitForPageLoad();
-    this.logger.info('Navigated back');
+    this.logger.info("Navigated back");
   }
 
   /**
@@ -246,7 +270,7 @@ export abstract class BasePage {
   async goForward(): Promise<void> {
     await this.page.goForward();
     await this.waitForPageLoad();
-    this.logger.info('Navigated forward');
+    this.logger.info("Navigated forward");
   }
 
   /**
@@ -260,12 +284,14 @@ export abstract class BasePage {
    * Add cookie
    */
   async addCookie(name: string, value: string, domain?: string) {
-    await this.page.context().addCookies([{
-      name,
-      value,
-      domain: domain || new URL(this.page.url()).hostname,
-      path: '/'
-    }]);
+    await this.page.context().addCookies([
+      {
+        name,
+        value,
+        domain: domain || new URL(this.page.url()).hostname,
+        path: "/",
+      },
+    ]);
     this.logger.info(`Added cookie: ${name}=${value}`);
   }
 
@@ -274,7 +300,7 @@ export abstract class BasePage {
    */
   async clearCookies(): Promise<void> {
     await this.page.context().clearCookies();
-    this.logger.info('Cleared all cookies');
+    this.logger.info("Cleared all cookies");
   }
 
   /**
@@ -288,7 +314,7 @@ export abstract class BasePage {
    * Get local storage item
    */
   async getLocalStorageItem(key: string): Promise<string | null> {
-    return await this.page.evaluate(key => localStorage.getItem(key), key);
+    return await this.page.evaluate((key) => localStorage.getItem(key), key);
   }
 
   /**
@@ -297,7 +323,7 @@ export abstract class BasePage {
   async setLocalStorageItem(key: string, value: string): Promise<void> {
     await this.page.evaluate(
       ({ key, value }) => localStorage.setItem(key, value),
-      { key, value }
+      { key, value },
     );
     this.logger.info(`Set localStorage: ${key}=${value}`);
   }
@@ -307,6 +333,6 @@ export abstract class BasePage {
    */
   async clearLocalStorage(): Promise<void> {
     await this.page.evaluate(() => localStorage.clear());
-    this.logger.info('Cleared localStorage');
+    this.logger.info("Cleared localStorage");
   }
 }

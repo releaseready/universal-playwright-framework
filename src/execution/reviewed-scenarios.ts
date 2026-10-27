@@ -15,9 +15,9 @@ export const INPUT_FIXTURE_PATH = "fixtures/execution/approved-inputs.json";
 
 const REVIEWED_SOURCE_REVISION = "rrdweb4-synthetic-source-1";
 const REVIEWED_FEATURE_REVISION =
-  "e5401fc958d62b1bb3c491c64df8c214eb42213e0eb7beefdafb49c5c1f0c508";
+  "c916c0e7ad8efab755c669578827870c5fdfb48e53536362715d7dfdfcc31268";
 const REVIEWED_IMPLEMENTATION_REVISION =
-  "2c3b64ff27425ccb60ebdaf6228920455bb8169b5299a02115d4087a142f955c";
+  "2c676f704500f903300a076244d3aed4afd6aaee0a8674f82f2c94521cce5e12";
 
 const stepManifest: ReviewedStepManifest = {
   implementationRevision: REVIEWED_IMPLEMENTATION_REVISION,
@@ -35,6 +35,10 @@ const stepManifest: ReviewedStepManifest = {
       expression: "the synthetic page confirms the prepared display name",
     },
     { id: "confirm-status", expression: "the synthetic status says {string}" },
+    {
+      id: "retry-status",
+      expression: "the synthetic status matches its retry attempt",
+    },
     { id: "pending-step", expression: "the scenario is explicitly pending" },
     { id: "bounded-wait", expression: "I wait for {int} milliseconds" },
     {
@@ -66,6 +70,7 @@ const reviewedApproval: ScenarioApproval = {
   implementationRevision: REVIEWED_IMPLEMENTATION_REVISION,
   scenarios: [
     approveScenario("browser-flow", "S01"),
+    approveScenario("retry-assertion-flow", "S03"),
     approveScenario("assertion-failure", "S02"),
     approveScenario("pending-flow", "S02"),
     approveScenario("undefined-flow", "S02"),
@@ -81,6 +86,7 @@ export const reviewedFixturePolicy: ReviewedFixtureFieldPolicy = {
   sharedFields: {},
   scenarioFields: {
     "browser-flow": { displayName: { type: "string", maxLength: 64 } },
+    "retry-assertion-flow": { displayName: { type: "string", maxLength: 64 } },
     "assertion-failure": { displayName: { type: "string", maxLength: 64 } },
     "pending-flow": { displayName: { type: "string", maxLength: 64 } },
     "undefined-flow": { displayName: { type: "string", maxLength: 64 } },

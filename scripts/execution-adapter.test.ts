@@ -62,11 +62,11 @@ test("reviewed synthetic browser actions pass with confirmed isolated cleanup", 
   await assertProcessExited(browserPid);
 });
 
-test("a failed attempt stays visible when a fresh browser attempt passes", async () => {
+test("a real assertion failure stays visible when a fresh browser attempt passes", async () => {
   const browserPids: number[] = [];
-  const result = await run("browser-flow", {
+  const result = await run("retry-assertion-flow", {
     retryCount: 1,
-    testFailAttempts: [1],
+    testAssertionMismatchAttempts: [1],
     onBrowserProcessStarted: (pid) => browserPids.push(pid),
   });
 
@@ -76,39 +76,44 @@ test("a failed attempt stays visible when a fresh browser attempt passes", async
     result.attempts.map((attempt) => attempt.status),
     ["failed", "passed"],
   );
-  assert.equal(result.attempts[0].injectedFailure, true);
-  assert.equal(result.attempts[0].scenarios[0].status, "passed");
+  assert.equal(result.attempts[0].scenarios[0].status, "failed");
+  assert.equal(result.attempts[0].scenarios[0].cleanupStatus, "confirmed");
   assert.equal(result.attempts[0].resourceCleanup.status, "confirmed");
-  assert.equal(result.attempts[1].injectedFailure, false);
+  assert.equal(result.attempts[1].scenarios[0].status, "passed");
   assert.equal(result.scenarios[0].status, "passed_after_retry");
   assert.equal(result.resourceCleanup.status, "confirmed");
   assert.equal(browserPids.length, 2);
+  assert.notEqual(browserPids[0], browserPids[1]);
+  assert.notEqual(
+    result.attempts[0].diagnosticReference,
+    result.attempts[1].diagnosticReference,
+  );
   await Promise.all(browserPids.map(assertProcessExited));
 });
 
 test("retries are disabled unless an explicit retry count is supplied", async () => {
-  const result = await run("browser-flow", {
-    testFailAttempts: [1],
+  const result = await run("retry-assertion-flow", {
+    testAssertionMismatchAttempts: [1],
   });
 
   assert.equal(result.status, "failed");
   assert.equal(result.attemptCount, 1);
-  assert.equal(result.attempts[0].injectedFailure, true);
-  assert.equal(result.attempts[0].scenarios[0].status, "passed");
+  assert.equal(result.attempts[0].scenarios[0].status, "failed");
+  assert.equal(result.attempts[0].scenarios[0].cleanupStatus, "confirmed");
   assert.equal(result.resourceCleanup.status, "confirmed");
 });
 
 test("retry limit exhaustion preserves every attempt", async () => {
-  const result = await run("browser-flow", {
+  const result = await run("retry-assertion-flow", {
     retryCount: 1,
-    testFailAttempts: [1, 2],
+    testAssertionMismatchAttempts: [1, 2],
   });
 
   assert.equal(result.status, "failed");
   assert.equal(result.attemptCount, 2);
   assert.deepEqual(
-    result.attempts.map((attempt) => attempt.injectedFailure),
-    [true, true],
+    result.attempts.map((attempt) => attempt.scenarios[0].status),
+    ["failed", "failed"],
   );
   assert.equal(result.resourceCleanup.status, "confirmed");
 });
@@ -130,6 +135,113 @@ test("cancellation during the first attempt prevents another browser launch", as
   assert.equal(browserPids.length, 1);
   assert.equal(result.resourceCleanup.status, "confirmed");
   await Promise.all(browserPids.map(assertProcessExited));
+});
+
+test("cancellation during teardown preserves a completed successful attempt", async () => {
+  const controller = new AbortController();
+  const result = await run("browser-flow", {
+    signal: controller.signal,
+    testOnAttemptCleanupStarted: () => controller.abort(),
+  });
+
+  assert.equal(result.status, "passed");
+  assert.equal(result.attempts[0].status, "passed");
+  assert.equal(result.attempts[0].scenarios[0].status, "passed");
+  assert.equal(result.resourceCleanup.status, "confirmed");
+});
+
+test("a deadline during teardown preserves a completed successful attempt", async () => {
+  let now = 0;
+  const result = await run("browser-flow", {
+    runTimeoutMs: 30_000,
+    testNow: () => now,
+    testOnAttemptCleanupStarted: () => {
+      now = 30_001;
+    },
+  });
+
+  assert.equal(result.status, "passed");
+  assert.equal(result.attempts[0].status, "passed");
+  assert.equal(result.attempts[0].scenarios[0].status, "passed");
+  assert.equal(result.resourceCleanup.status, "confirmed");
+});
+
+test("cancellation between attempts preserves failure and prevents another launch", async () => {
+  const controller = new AbortController();
+  const browserPids: number[] = [];
+  const result = await run("retry-assertion-flow", {
+    retryCount: 1,
+    signal: controller.signal,
+    testAssertionMismatchAttempts: [1],
+    testOnAttemptCleanupStarted: () => controller.abort(),
+    onBrowserProcessStarted: (pid) => browserPids.push(pid),
+  });
+
+  assert.equal(result.status, "cancelled");
+  assert.equal(result.attemptCount, 1);
+  assert.equal(result.attempts[0].status, "failed");
+  assert.equal(result.attempts[0].scenarios[0].status, "failed");
+  assert.equal(result.attempts[0].resourceCleanup.status, "confirmed");
+  assert.equal(browserPids.length, 1);
+  await Promise.all(browserPids.map(assertProcessExited));
+});
+
+test("a deadline between attempts preserves failure and prevents another launch", async () => {
+  let now = 0;
+  const browserPids: number[] = [];
+  const result = await run("retry-assertion-flow", {
+    retryCount: 1,
+    runTimeoutMs: 30_000,
+    testAssertionMismatchAttempts: [1],
+    testNow: () => now,
+    testOnAttemptCleanupStarted: () => {
+      now = 30_001;
+    },
+    onBrowserProcessStarted: (pid) => browserPids.push(pid),
+  });
+
+  assert.equal(result.status, "timed_out");
+  assert.equal(result.attemptCount, 1);
+  assert.equal(result.attempts[0].status, "failed");
+  assert.equal(result.attempts[0].scenarios[0].status, "failed");
+  assert.equal(result.attempts[0].resourceCleanup.status, "confirmed");
+  assert.equal(browserPids.length, 1);
+  await Promise.all(browserPids.map(assertProcessExited));
+});
+
+test("unknown browser cleanup during late cancellation remains unknown and non-retriable", async () => {
+  const controller = new AbortController();
+  const browserPids: number[] = [];
+  const result = await run("browser-flow", {
+    retryCount: 1,
+    signal: controller.signal,
+    testCleanupFailure: "browser-state-unknown",
+    testOnAttemptCleanupStarted: () => controller.abort(),
+    onBrowserProcessStarted: (pid) => browserPids.push(pid),
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.attemptCount, 1);
+  assert.equal(result.attempts[0].status, "failed");
+  assert.equal(result.resourceCleanup.status, "unknown");
+  assert.equal(result.attempts[0].resourceCleanup.status, "unknown");
+  assert.equal(result.resourceCleanup.browserProcessStopped, false);
+  assert.equal(browserPids.length, 1);
+  await Promise.all(browserPids.map(assertProcessExited));
+});
+
+test("the public 50 ms minimum still admits a positive internal remaining budget", async () => {
+  let clockReads = 0;
+  const result = await executeReviewedScenarios({
+    scenarioIds: ["not-approved"],
+    runTimeoutMs: 50,
+    testNow: () => (clockReads++ === 0 ? 0 : 1),
+  });
+
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.attemptCount, 1);
+  assert.equal(result.attempts[0].status, "incomplete");
+  assert.equal(result.resourceCleanup.status, "not_required");
 });
 
 test("cleanup failure prevents another attempt", async () => {

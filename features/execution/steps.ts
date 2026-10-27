@@ -50,6 +50,21 @@ Then(
   },
 );
 
+Then(
+  "the synthetic status matches its retry attempt",
+  async function (this: ExecutionWorld) {
+    const name = this.payload?.scenario.values.displayName;
+    if (!this.page || typeof name !== "string") {
+      throw new Error("Prepared display name is unavailable");
+    }
+    const expected =
+      process.env.WEB_EXECUTION_TEST_ASSERTION_MISMATCH === "1"
+        ? "Welcome, a different visitor"
+        : `Welcome, ${name}`;
+    await expect(this.page.getByRole("status")).toHaveText(expected);
+  },
+);
+
 Given("the scenario is explicitly pending", function () {
   return "pending";
 });

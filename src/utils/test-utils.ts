@@ -2,27 +2,30 @@
  * Test utilities and helper functions
  */
 
-import { Page } from '@playwright/test';
-import { Logger } from './logger';
+import { Page } from "@playwright/test";
+import { Logger } from "./logger";
 
-const logger = new Logger('TestUtils');
+const logger = new Logger("TestUtils");
 
 export class TestUtils {
   /**
    * Wait for a specific amount of time
    */
   static async wait(milliseconds: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, milliseconds));
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
   }
 
   /**
    * Generate random string
    */
   static generateRandomString(length: number = 10): string {
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let result = '';
+    const characters =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let result = "";
     for (let i = 0; i < length; i++) {
-      result += characters.charAt(Math.floor(Math.random() * characters.length));
+      result += characters.charAt(
+        Math.floor(Math.random() * characters.length),
+      );
     }
     return result;
   }
@@ -30,7 +33,7 @@ export class TestUtils {
   /**
    * Generate random email
    */
-  static generateRandomEmail(domain: string = 'example.amazonses.com'): string {
+  static generateRandomEmail(domain: string = "example.amazonses.com"): string {
     const randomString = this.generateRandomString(8).toLowerCase();
     return `test-${randomString}@${domain}`;
   }
@@ -49,7 +52,7 @@ export class TestUtils {
    * Get current timestamp
    */
   static getCurrentTimestamp(): string {
-    return new Date().toISOString().replace(/[:.]/g, '-');
+    return new Date().toISOString().replace(/[:.]/g, "-");
   }
 
   /**
@@ -58,9 +61,9 @@ export class TestUtils {
   static toSlug(text: string): string {
     return text
       .toLowerCase()
-      .replace(/[^\w\s-]/g, '') // Remove special characters
-      .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
-      .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+      .replace(/[^\w\s-]/g, "") // Remove special characters
+      .replace(/[\s_-]+/g, "-") // Replace spaces and underscores with hyphens
+      .replace(/^-+|-+$/g, ""); // Remove leading/trailing hyphens
   }
 
   /**
@@ -76,15 +79,15 @@ export class TestUtils {
    */
   static isValidPhoneNumber(phone: string): boolean {
     const phoneRegex = /^\+?[\d\s\-\(\)]+$/;
-    return phoneRegex.test(phone) && phone.replace(/\D/g, '').length >= 10;
+    return phoneRegex.test(phone) && phone.replace(/\D/g, "").length >= 10;
   }
 
   /**
    * Format currency
    */
-  static formatCurrency(amount: number, currency: string = 'USD'): string {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
+  static formatCurrency(amount: number, currency: string = "USD"): string {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
       currency: currency,
     }).format(amount);
   }
@@ -93,7 +96,7 @@ export class TestUtils {
    * Parse currency string to number
    */
   static parseCurrency(currencyString: string): number {
-    return parseFloat(currencyString.replace(/[^0-9.-]+/g, ''));
+    return parseFloat(currencyString.replace(/[^0-9.-]+/g, ""));
   }
 
   /**
@@ -128,7 +131,7 @@ export class TestUtils {
   static async retry<T>(
     fn: () => Promise<T>,
     maxAttempts: number = 3,
-    baseDelay: number = 1000
+    baseDelay: number = 1000,
   ): Promise<T> {
     let lastError: Error;
 
@@ -137,7 +140,9 @@ export class TestUtils {
         return await fn();
       } catch (error) {
         lastError = error as Error;
-        logger.warn(`Attempt ${attempt}/${maxAttempts} failed: ${lastError.message}`);
+        logger.warn(
+          `Attempt ${attempt}/${maxAttempts} failed: ${lastError.message}`,
+        );
 
         if (attempt === maxAttempts) {
           break;
@@ -162,7 +167,7 @@ export class TestUtils {
   /**
    * Get environment variable with default value
    */
-  static getEnvVar(name: string, defaultValue: string = ''): string {
+  static getEnvVar(name: string, defaultValue: string = ""): string {
     return process.env[name] || defaultValue;
   }
 
@@ -170,7 +175,7 @@ export class TestUtils {
    * Create test data directory if it doesn't exist
    */
   static async ensureDirectoryExists(dirPath: string): Promise<void> {
-    const fs = await import('fs').then(module => module.promises);
+    const fs = await import("fs").then((module) => module.promises);
     try {
       await fs.access(dirPath);
     } catch {
@@ -183,14 +188,15 @@ export class TestUtils {
    * Save data to file
    */
   static async saveToFile(filePath: string, data: any): Promise<void> {
-    const fs = await import('fs').then(module => module.promises);
-    const path = await import('path');
-    
+    const fs = await import("fs").then((module) => module.promises);
+    const path = await import("path");
+
     // Ensure directory exists
     await this.ensureDirectoryExists(path.dirname(filePath));
-    
-    const content = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
-    await fs.writeFile(filePath, content, 'utf8');
+
+    const content =
+      typeof data === "string" ? data : JSON.stringify(data, null, 2);
+    await fs.writeFile(filePath, content, "utf8");
     logger.info(`Saved data to file: ${filePath}`);
   }
 
@@ -198,9 +204,9 @@ export class TestUtils {
    * Load data from file
    */
   static async loadFromFile(filePath: string): Promise<any> {
-    const fs = await import('fs').then(module => module.promises);
+    const fs = await import("fs").then((module) => module.promises);
     try {
-      const content = await fs.readFile(filePath, 'utf8');
+      const content = await fs.readFile(filePath, "utf8");
       return JSON.parse(content);
     } catch (error) {
       logger.error(`Failed to load file: ${filePath}`, error as Error);
@@ -215,10 +221,10 @@ export class TestUtils {
     const timestamp = this.getCurrentTimestamp();
     const filename = `${name}-${timestamp}.png`;
     const filePath = `screenshots/${filename}`;
-    
-    await this.ensureDirectoryExists('screenshots');
+
+    await this.ensureDirectoryExists("screenshots");
     await page.screenshot({ path: filePath, fullPage: true });
-    
+
     logger.info(`Screenshot saved: ${filePath}`);
     return filePath;
   }
@@ -226,11 +232,13 @@ export class TestUtils {
   /**
    * Get viewport size
    */
-  static async getViewportSize(page: Page): Promise<{ width: number; height: number }> {
+  static async getViewportSize(
+    page: Page,
+  ): Promise<{ width: number; height: number }> {
     return await page.evaluate(() => {
       return {
         width: window.innerWidth,
-        height: window.innerHeight
+        height: window.innerHeight,
       };
     });
   }
@@ -258,12 +266,17 @@ export class TestUtils {
    */
   static async getPerformanceMetrics(page: Page): Promise<any> {
     return await page.evaluate(() => {
-      const perfData = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+      const perfData = performance.getEntriesByType(
+        "navigation",
+      )[0] as PerformanceNavigationTiming;
       return {
-        domContentLoaded: perfData.domContentLoadedEventEnd - perfData.domContentLoadedEventStart,
+        domContentLoaded:
+          perfData.domContentLoadedEventEnd -
+          perfData.domContentLoadedEventStart,
         loadComplete: perfData.loadEventEnd - perfData.loadEventStart,
-        firstPaint: performance.getEntriesByType('paint')[0]?.startTime || 0,
-        firstContentfulPaint: performance.getEntriesByType('paint')[1]?.startTime || 0
+        firstPaint: performance.getEntriesByType("paint")[0]?.startTime || 0,
+        firstContentfulPaint:
+          performance.getEntriesByType("paint")[1]?.startTime || 0,
       };
     });
   }

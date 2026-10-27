@@ -7,6 +7,12 @@ Feature: Execute reviewed synthetic scenarios
     When I enter the prepared display name
     Then the synthetic page confirms the prepared display name
 
+  @scenario-id=retry-assertion-flow @web-safe-execution-S03
+  Scenario: A real assertion can fail before a retry passes
+    Given the synthetic reviewed page is open
+    When I enter the prepared display name
+    Then the synthetic status matches its retry attempt
+
   @scenario-id=assertion-failure @web-safe-execution-S02
   Scenario: A failed assertion fails the run
     Given the synthetic reviewed page is open
