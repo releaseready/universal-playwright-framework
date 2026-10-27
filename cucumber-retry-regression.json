@@ -1,0 +1,7 @@
+{
+  "default": {
+    "paths": ["features/execution/retries.feature"],
+    "require": ["dist/cucumber/features/execution/retry-steps.js"],
+    "format": ["progress"]
+  }
+}

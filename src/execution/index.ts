@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { performance } from "node:perf_hooks";
 import { chromium, type BrowserServer } from "@playwright/test";
 import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -22,9 +23,11 @@ export const MAX_EXECUTION_SCENARIOS = 6;
 export const MAX_CONCURRENT_SCENARIOS = 2;
 export const MAX_SCENARIO_TIMEOUT_MS = 60_000;
 export const MAX_RUN_TIMEOUT_MS = 120_000;
+export const MAX_EXECUTION_RETRIES = 2;
 
 export type ExecutionStatus =
   | "passed"
+  | "passed_after_retry"
   | "failed"
   | "incomplete"
   | "timed_out"
@@ -65,6 +68,18 @@ export interface ExecutionSummary {
     readonly operationPerformed: false;
   };
   readonly scenarios: readonly ScenarioExecutionResult[];
+  readonly attemptCount: number;
+  readonly attempts: readonly ExecutionAttemptSummary[];
+}
+
+export interface ExecutionAttemptSummary {
+  readonly attemptNumber: number;
+  readonly diagnosticReference: string;
+  readonly status: ExecutionStatus;
+  readonly resourceCleanup: ExecutionSummary["resourceCleanup"];
+  readonly dataRestoration: ExecutionSummary["dataRestoration"];
+  readonly scenarios: readonly ScenarioExecutionResult[];
+  readonly injectedFailure: boolean;
 }
 
 export interface ExecutionOptions {
@@ -72,9 +87,19 @@ export interface ExecutionOptions {
   readonly runTimeoutMs?: number;
   readonly scenarioTimeoutMs?: number;
   readonly maxConcurrentScenarios?: number;
+  readonly retryCount?: number;
   readonly signal?: AbortSignal;
   readonly testCleanupFailure?: "context" | "server-pending" | "worker-stall";
+  readonly testFailAttempts?: readonly number[];
   readonly onBrowserProcessStarted?: (pid: number) => void;
+}
+
+interface SingleExecutionSummary {
+  readonly diagnosticReference: string;
+  readonly status: ExecutionStatus;
+  readonly resourceCleanup: ExecutionSummary["resourceCleanup"];
+  readonly dataRestoration: ExecutionSummary["dataRestoration"];
+  readonly scenarios: readonly ScenarioExecutionResult[];
 }
 
 interface FixtureDocument {
@@ -118,11 +143,14 @@ function validateOptions(options: ExecutionOptions): {
   readonly runTimeoutMs: number;
   readonly scenarioTimeoutMs: number;
   readonly concurrency: number;
+  readonly retryCount: number;
 } {
   const runTimeoutMs = options.runTimeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
   const scenarioTimeoutMs =
     options.scenarioTimeoutMs ?? DEFAULT_SCENARIO_TIMEOUT_MS;
   const concurrency = options.maxConcurrentScenarios ?? 1;
+  const retryCount = options.retryCount ?? 0;
+  const testFailAttempts = options.testFailAttempts ?? [];
   if (
     !Number.isSafeInteger(runTimeoutMs) ||
     runTimeoutMs < 50 ||
@@ -132,11 +160,21 @@ function validateOptions(options: ExecutionOptions): {
     scenarioTimeoutMs > MAX_SCENARIO_TIMEOUT_MS ||
     !Number.isSafeInteger(concurrency) ||
     concurrency < 1 ||
-    concurrency > MAX_CONCURRENT_SCENARIOS
+    concurrency > MAX_CONCURRENT_SCENARIOS ||
+    !Number.isSafeInteger(retryCount) ||
+    retryCount < 0 ||
+    retryCount > MAX_EXECUTION_RETRIES ||
+    !Array.isArray(testFailAttempts) ||
+    testFailAttempts.some(
+      (attempt) =>
+        !Number.isSafeInteger(attempt) ||
+        attempt < 1 ||
+        attempt > retryCount + 1,
+    )
   ) {
     throw new RangeError("Synthetic execution limits are outside their bounds");
   }
-  return { runTimeoutMs, scenarioTimeoutMs, concurrency };
+  return { runTimeoutMs, scenarioTimeoutMs, concurrency, retryCount };
 }
 
 function makeFixtureInput(
@@ -704,7 +742,7 @@ function summary(
   browserProcessStopped: boolean | null = null,
   blockedTargetRequestCount = 0,
   injectedPendingCleanup = false,
-): ExecutionSummary {
+): SingleExecutionSummary {
   return {
     diagnosticReference,
     status,
@@ -720,9 +758,9 @@ function summary(
   };
 }
 
-export async function executeReviewedScenarios(
+async function executeReviewedScenarioAttempt(
   options: ExecutionOptions = {},
-): Promise<ExecutionSummary> {
+): Promise<SingleExecutionSummary> {
   const { runTimeoutMs, scenarioTimeoutMs, concurrency } =
     validateOptions(options);
   const diagnosticReference = randomUUID();
@@ -731,7 +769,14 @@ export async function executeReviewedScenarios(
     () => runController.abort("run-timeout"),
     runTimeoutMs,
   );
-  const onAbort = (): void => runController.abort("cancelled");
+  const onAbort = (): void =>
+    runController.abort(
+      options.signal?.reason === "run-timeout"
+        ? "run-timeout"
+        : options.signal?.reason === "cleanup-unknown"
+          ? "cleanup-unknown"
+          : "cancelled",
+    );
   options.signal?.addEventListener("abort", onAbort);
   if (options.signal?.aborted) {
     onAbort();
@@ -1011,4 +1056,117 @@ export async function executeReviewedScenarios(
     blockedTargetRequestCount?.() ?? 0,
     serverPendingCloseInjected,
   );
+}
+
+export async function executeReviewedScenarios(
+  options: ExecutionOptions = {},
+): Promise<ExecutionSummary> {
+  const { runTimeoutMs, retryCount } = validateOptions(options);
+  const deadline = performance.now() + runTimeoutMs;
+  const runController = new AbortController();
+  const onAbort = (): void => runController.abort("cancelled");
+  options.signal?.addEventListener("abort", onAbort);
+  if (options.signal?.aborted) {
+    onAbort();
+  }
+  const deadlineTimer = setTimeout(
+    () => runController.abort("run-timeout"),
+    runTimeoutMs,
+  );
+  const attempts: ExecutionAttemptSummary[] = [];
+  let finalStatusOverride: ExecutionStatus | undefined;
+
+  try {
+    for (
+      let attemptNumber = 1;
+      attemptNumber <= retryCount + 1;
+      attemptNumber += 1
+    ) {
+      if (attemptNumber > 1 && runController.signal.aborted) {
+        finalStatusOverride =
+          runController.signal.reason === "run-timeout"
+            ? "timed_out"
+            : "cancelled";
+        break;
+      }
+      const remainingMs = Math.floor(deadline - performance.now());
+      if (remainingMs < 50) {
+        finalStatusOverride = "timed_out";
+        break;
+      }
+      const result = await executeReviewedScenarioAttempt({
+        ...options,
+        runTimeoutMs: Math.min(runTimeoutMs, remainingMs),
+        signal: runController.signal,
+      });
+      const injectedFailure =
+        result.status === "passed" &&
+        (options.testFailAttempts ?? []).includes(attemptNumber);
+      const attemptStatus = injectedFailure ? "failed" : result.status;
+      attempts.push({
+        ...result,
+        attemptNumber,
+        status: attemptStatus,
+        injectedFailure,
+      });
+
+      if (options.signal?.aborted) {
+        finalStatusOverride = "cancelled";
+        break;
+      }
+      if (performance.now() >= deadline) {
+        finalStatusOverride = "timed_out";
+        break;
+      }
+      const canRetry =
+        attemptStatus === "failed" &&
+        result.resourceCleanup.status === "confirmed" &&
+        result.scenarios.every(
+          (scenario) =>
+            scenario.cleanupStatus === "confirmed" &&
+            ["passed", "failed"].includes(scenario.status),
+        ) &&
+        !runController.signal.aborted &&
+        attemptNumber <= retryCount;
+      if (!canRetry) {
+        break;
+      }
+    }
+  } finally {
+    clearTimeout(deadlineTimer);
+    options.signal?.removeEventListener("abort", onAbort);
+  }
+
+  const lastAttempt = attempts.at(-1);
+  const lastResult =
+    lastAttempt ??
+    summary(
+      randomUUID(),
+      finalStatusOverride ?? "timed_out",
+      [],
+      "not_required",
+    );
+  const status =
+    finalStatusOverride ??
+    (lastAttempt?.status === "passed" && attempts.length > 1
+      ? "passed_after_retry"
+      : (lastAttempt?.status ?? "timed_out"));
+  const scenarios =
+    status === "passed_after_retry"
+      ? lastResult.scenarios.map((scenario) =>
+          scenario.status === "passed"
+            ? { ...scenario, status: "passed_after_retry" as const }
+            : scenario,
+        )
+      : lastResult.scenarios;
+
+  return {
+    diagnosticReference: lastResult.diagnosticReference,
+    status,
+    resourceCleanup: lastResult.resourceCleanup,
+    dataRestoration: lastResult.dataRestoration,
+    scenarios,
+    attemptCount: attempts.length,
+    attempts,
+  };
 }
