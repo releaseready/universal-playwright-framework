@@ -173,15 +173,15 @@ function validateOptions(
     !Number.isSafeInteger(retryCount) ||
     retryCount < 0 ||
     retryCount > MAX_EXECUTION_RETRIES ||
-    (testAssertionMismatchAttempts.length > 0 &&
-      !options.scenarioIds?.includes("retry-assertion-flow")) ||
     !Array.isArray(testAssertionMismatchAttempts) ||
     testAssertionMismatchAttempts.some(
       (attempt) =>
         !Number.isSafeInteger(attempt) ||
         attempt < 1 ||
         attempt > retryCount + 1,
-    )
+    ) ||
+    (testAssertionMismatchAttempts.length > 0 &&
+      !options.scenarioIds?.includes("retry-assertion-flow"))
   ) {
     throw new RangeError("Synthetic execution limits are outside their bounds");
   }
