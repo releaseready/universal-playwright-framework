@@ -11,7 +11,9 @@
   },
   "include": [
     "src/input-preparation/**/*.ts",
+    "src/execution/**/*.ts",
     "src/validation/**/*.ts",
+    "features/execution/**/*.ts",
     "features/input-preparation/**/*.ts",
     "features/support/**/*.ts",
     "features/steps/**/*.ts",
