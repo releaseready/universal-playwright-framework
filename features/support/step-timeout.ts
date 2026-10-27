@@ -1,8 +1,8 @@
-const DEFAULT_STEP_TIMEOUT_MS = 15_000;
-const MIN_STEP_TIMEOUT_MS = 12_000;
-const MAX_STEP_TIMEOUT_MS = 60_000;
+export const DEFAULT_STEP_TIMEOUT_MS = 15_000;
+export const MIN_STEP_TIMEOUT_MS = 12_000;
+export const MAX_STEP_TIMEOUT_MS = 60_000;
 
-function getStepTimeoutMs(value) {
+export function getStepTimeoutMs(value: string | undefined): number {
   if (value === undefined) {
     return DEFAULT_STEP_TIMEOUT_MS;
   }
@@ -26,10 +26,3 @@ function getStepTimeoutMs(value) {
 
   return timeoutMs;
 }
-
-module.exports = {
-  DEFAULT_STEP_TIMEOUT_MS,
-  MAX_STEP_TIMEOUT_MS,
-  MIN_STEP_TIMEOUT_MS,
-  getStepTimeoutMs,
-};

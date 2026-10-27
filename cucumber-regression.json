@@ -1,0 +1,10 @@
+{
+  "default": {
+    "require": [
+      "dist/cucumber/features/support/hooks.js",
+      "dist/cucumber/features/steps/synthetic.steps.js",
+      "dist/cucumber/features/steps/timeout-regression.steps.js"
+    ],
+    "format": ["progress"]
+  }
+}

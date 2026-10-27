@@ -1,0 +1,10 @@
+{
+  "default": {
+    "paths": ["features/**/*.feature"],
+    "require": [
+      "dist/cucumber/features/support/hooks.js",
+      "dist/cucumber/features/steps/synthetic.steps.js"
+    ],
+    "format": ["progress", "json:reports/cucumber-results.json"]
+  }
+}

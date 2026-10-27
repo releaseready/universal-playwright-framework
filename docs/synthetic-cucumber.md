@@ -16,13 +16,15 @@ The command reports the scenario's actual outcome in the terminal and writes Cuc
 
 Cucumber steps and hooks have a validated 15-second default timeout. To adjust it for a slower local machine, set `CUCUMBER_STEP_TIMEOUT_MS` to an integer from `12000` through `60000` (for example, `CUCUMBER_STEP_TIMEOUT_MS=20000 npm run test:features -- --tags @synthetic`). Values outside that range are rejected before execution. Playwright launch/navigation are bounded at 10 seconds, while actions and assertions retain their 5-second timeout, so their useful error details surface before Cucumber's outer timeout.
 
+Hooks, steps, and regression tests are authored in TypeScript and strictly compiled by the repository's existing TypeScript compiler. `cucumber.json` points Cucumber to generated, ignored JavaScript output; regression runs use a separate config with no JSON report formatter.
+
 Run the local timeout and cleanup regression checks with:
 
 ```bash
 npm run test:features:regression
 ```
 
-These checks cover the default and range validation, a synthetic step lasting longer than the old 5-second limit, readable Playwright assertion output, and process exit after a failed assertion to verify cleanup.
+This command runs the real scenario first, then checks timeout defaults and bounds, a synthetic step lasting longer than the old 5-second limit, readable Playwright assertion output, that the real results report stays byte-for-byte unchanged, and independent cleanup/error preservation including server closure when browser close rejects.
 
 ## Scope and boundaries
 
