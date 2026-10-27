@@ -1,6 +1,6 @@
 # 🎯 Universal Playwright E2E Testing Framework
 
-A **production-ready**, **plug-and-play** end-to-end testing framework built with Playwright and TypeScript. 
+A **production-ready**, **plug-and-play** end-to-end testing framework built with Playwright and TypeScript.
 
 **� Use this framework for ANY web application** - simply add as a submodule and start testing in minutes!
 
@@ -24,3 +24,7 @@ npm run test
 ```
 
 **That's it! You now have professional E2E testing for your app.** 🎉
+
+## Standalone synthetic Cucumber scenario
+
+Run the local, assertion-backed Gherkin + Playwright example without an application account or external target. See the [synthetic Cucumber setup and results guide](docs/synthetic-cucumber.md).

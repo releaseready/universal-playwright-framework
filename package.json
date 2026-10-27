@@ -15,6 +15,8 @@
     "test:safari": "playwright test --project=webkit",
     "test:mobile": "playwright test --project=mobile-chrome",
     "test:parallel": "playwright test --workers=4",
+    "pretest:features": "node -e \"require('node:fs').mkdirSync('reports', { recursive: true })\"",
+    "test:features": "cucumber-js --config cucumber.js",
     "report": "playwright show-report",
     "report:allure": "allure serve allure-results",
     "clean": "rimraf dist reports screenshots test-results",
@@ -44,6 +46,7 @@
     "url": "https://github.com/universal-testing/playwright-framework.git"
   },
   "devDependencies": {
+    "@cucumber/cucumber": "^11.3.0",
     "@playwright/test": "^1.40.0",
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
