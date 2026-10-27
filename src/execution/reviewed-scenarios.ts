@@ -13,11 +13,11 @@ export const REVIEWED_FEATURE_PATH =
   "fixtures/execution/reviewed-scenarios.feature";
 export const INPUT_FIXTURE_PATH = "fixtures/execution/approved-inputs.json";
 
-const REVIEWED_SOURCE_REVISION = "rrdweb4-synthetic-source-1";
+export const REVIEWED_SOURCE_REVISION = "rrdweb4-synthetic-source-1";
 const REVIEWED_FEATURE_REVISION =
   "c916c0e7ad8efab755c669578827870c5fdfb48e53536362715d7dfdfcc31268";
 const REVIEWED_IMPLEMENTATION_REVISION =
-  "2c676f704500f903300a076244d3aed4afd6aaee0a8674f82f2c94521cce5e12";
+  "91289d76cb8d82e0c4174eae6bb33695460c8eab90d90428036107141ac9b912";
 
 const stepManifest: ReviewedStepManifest = {
   implementationRevision: REVIEWED_IMPLEMENTATION_REVISION,
@@ -109,6 +109,8 @@ function hashImplementation(): string {
     "package.json",
     "package-lock.json",
     "src/execution/index.ts",
+    "src/reporting/index.ts",
+    "src/reporting/output.ts",
     "features/execution/steps.ts",
     "features/execution/support/hooks.ts",
     "features/execution/support/world.ts",
@@ -119,6 +121,8 @@ function hashImplementation(): string {
     "dist/cucumber/src/execution/index.js",
     "dist/cucumber/src/execution/cli.js",
     "dist/cucumber/src/execution/reviewed-scenarios.js",
+    "dist/cucumber/src/reporting/index.js",
+    "dist/cucumber/src/reporting/output.js",
     "dist/cucumber/src/input-preparation/index.js",
     "dist/cucumber/src/validation/feature-validator.js",
     "dist/cucumber/src/validation/scenario-selector.js",
