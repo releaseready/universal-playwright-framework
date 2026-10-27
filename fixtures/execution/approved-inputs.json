@@ -13,6 +13,10 @@
       "secretReference": "unused-synthetic-reference"
     },
     {
+      "reference": "synthetic-retry-assertion",
+      "secretReference": "unused-synthetic-reference"
+    },
+    {
       "reference": "synthetic-assertion",
       "secretReference": "unused-synthetic-reference"
     },
@@ -45,6 +49,21 @@
       "accountReference": "synthetic-browser",
       "cleanup": {
         "reference": "synthetic-cleanup-browser",
+        "authorizationRevision": "unverified-cleanup-1",
+        "requested": true
+      }
+    },
+    {
+      "id": "retry-assertion-flow",
+      "values": {
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Retry"
+        }
+      },
+      "accountReference": "synthetic-retry-assertion",
+      "cleanup": {
+        "reference": "synthetic-cleanup-retry-assertion",
         "authorizationRevision": "unverified-cleanup-1",
         "requested": true
       }

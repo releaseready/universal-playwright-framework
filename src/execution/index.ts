@@ -79,7 +79,6 @@ export interface ExecutionAttemptSummary {
   readonly resourceCleanup: ExecutionSummary["resourceCleanup"];
   readonly dataRestoration: ExecutionSummary["dataRestoration"];
   readonly scenarios: readonly ScenarioExecutionResult[];
-  readonly injectedFailure: boolean;
 }
 
 export interface ExecutionOptions {
@@ -89,8 +88,14 @@ export interface ExecutionOptions {
   readonly maxConcurrentScenarios?: number;
   readonly retryCount?: number;
   readonly signal?: AbortSignal;
-  readonly testCleanupFailure?: "context" | "server-pending" | "worker-stall";
-  readonly testFailAttempts?: readonly number[];
+  readonly testCleanupFailure?:
+    | "context"
+    | "server-pending"
+    | "worker-stall"
+    | "browser-state-unknown";
+  readonly testAssertionMismatchAttempts?: readonly number[];
+  readonly testNow?: () => number;
+  readonly testOnAttemptCleanupStarted?: () => void;
   readonly onBrowserProcessStarted?: (pid: number) => void;
 }
 
@@ -139,7 +144,10 @@ const CUCUMBER_CONFIG = "cucumber-execution.json";
 const DEFAULT_RUN_TIMEOUT_MS = 90_000;
 const DEFAULT_SCENARIO_TIMEOUT_MS = 30_000;
 
-function validateOptions(options: ExecutionOptions): {
+function validateOptions(
+  options: ExecutionOptions,
+  minimumRunTimeoutMs = 50,
+): {
   readonly runTimeoutMs: number;
   readonly scenarioTimeoutMs: number;
   readonly concurrency: number;
@@ -150,10 +158,11 @@ function validateOptions(options: ExecutionOptions): {
     options.scenarioTimeoutMs ?? DEFAULT_SCENARIO_TIMEOUT_MS;
   const concurrency = options.maxConcurrentScenarios ?? 1;
   const retryCount = options.retryCount ?? 0;
-  const testFailAttempts = options.testFailAttempts ?? [];
+  const testAssertionMismatchAttempts =
+    options.testAssertionMismatchAttempts ?? [];
   if (
     !Number.isSafeInteger(runTimeoutMs) ||
-    runTimeoutMs < 50 ||
+    runTimeoutMs < minimumRunTimeoutMs ||
     runTimeoutMs > MAX_RUN_TIMEOUT_MS ||
     !Number.isSafeInteger(scenarioTimeoutMs) ||
     scenarioTimeoutMs < 50 ||
@@ -164,8 +173,10 @@ function validateOptions(options: ExecutionOptions): {
     !Number.isSafeInteger(retryCount) ||
     retryCount < 0 ||
     retryCount > MAX_EXECUTION_RETRIES ||
-    !Array.isArray(testFailAttempts) ||
-    testFailAttempts.some(
+    (testAssertionMismatchAttempts.length > 0 &&
+      !options.scenarioIds?.includes("retry-assertion-flow")) ||
+    !Array.isArray(testAssertionMismatchAttempts) ||
+    testAssertionMismatchAttempts.some(
       (attempt) =>
         !Number.isSafeInteger(attempt) ||
         attempt < 1 ||
@@ -435,6 +446,7 @@ async function waitForChildExit(
 async function stopBrowserServer(
   browserServer: BrowserServer,
   testPendingClose = false,
+  testUnknownState = false,
 ): Promise<BrowserStopResult> {
   const browserProcess = browserServer.process();
   const close = testPendingClose
@@ -442,21 +454,31 @@ async function stopBrowserServer(
     : browserServer.close();
   void close.catch(() => {});
   if (await waitForChildExit(browserProcess, testPendingClose ? 200 : 1_500)) {
-    return { stopped: true, injectedPendingClose: testPendingClose };
+    return {
+      stopped: !testUnknownState,
+      injectedPendingClose: testPendingClose,
+    };
   }
 
   const kill = browserServer.kill();
   void kill.catch(() => {});
   if (await waitForChildExit(browserProcess, 1_000)) {
-    return { stopped: true, injectedPendingClose: testPendingClose };
+    return {
+      stopped: !testUnknownState,
+      injectedPendingClose: testPendingClose,
+    };
   }
   browserProcess.kill("SIGTERM");
   if (await waitForChildExit(browserProcess, 500)) {
-    return { stopped: true, injectedPendingClose: testPendingClose };
+    return {
+      stopped: !testUnknownState,
+      injectedPendingClose: testPendingClose,
+    };
   }
   browserProcess.kill("SIGKILL");
   return {
-    stopped: await waitForChildExit(browserProcess, 1_000),
+    stopped:
+      !testUnknownState && (await waitForChildExit(browserProcess, 1_000)),
     injectedPendingClose: testPendingClose,
   };
 }
@@ -508,6 +530,7 @@ function workerEnvironment(
   cleanupPath: string,
   testCleanupFailure: ExecutionOptions["testCleanupFailure"],
   browserEndpoint: string,
+  testAssertionMismatch: boolean,
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const name of [
@@ -530,6 +553,9 @@ function workerEnvironment(
   env.WEB_EXECUTION_PAYLOAD = JSON.stringify(payload);
   env.WEB_EXECUTION_CLEANUP_PATH = cleanupPath;
   env.WEB_EXECUTION_BROWSER_ENDPOINT = browserEndpoint;
+  if (testAssertionMismatch) {
+    env.WEB_EXECUTION_TEST_ASSERTION_MISMATCH = "1";
+  }
   if (testCleanupFailure) {
     env.WEB_EXECUTION_TEST_CLEANUP_FAILURE = testCleanupFailure;
   }
@@ -554,6 +580,7 @@ async function executeScenario(
   timeoutMs: number,
   runSignal: AbortSignal,
   testCleanupFailure: ExecutionOptions["testCleanupFailure"],
+  testAssertionMismatch: boolean,
 ): Promise<ScenarioExecutionResult> {
   const reportPath = path.join(temporaryDirectory, `${scenarioId}.json`);
   const cleanupPath = path.join(
@@ -581,6 +608,7 @@ async function executeScenario(
         cleanupPath,
         testCleanupFailure,
         browserEndpoint,
+        testAssertionMismatch,
       ),
     },
   );
@@ -760,9 +788,12 @@ function summary(
 
 async function executeReviewedScenarioAttempt(
   options: ExecutionOptions = {},
+  attemptNumber = 1,
 ): Promise<SingleExecutionSummary> {
-  const { runTimeoutMs, scenarioTimeoutMs, concurrency } =
-    validateOptions(options);
+  const { runTimeoutMs, scenarioTimeoutMs, concurrency } = validateOptions(
+    options,
+    1,
+  );
   const diagnosticReference = randomUUID();
   const runController = new AbortController();
   const runTimer = setTimeout(
@@ -913,6 +944,9 @@ async function executeReviewedScenarioAttempt(
             scenarioTimeoutMs,
             runController.signal,
             options.testCleanupFailure,
+            (options.testAssertionMismatchAttempts ?? []).includes(
+              attemptNumber,
+            ),
           );
           if (!runController.signal.aborted) {
             if (results[index].status === "timed_out") {
@@ -965,6 +999,11 @@ async function executeReviewedScenarioAttempt(
           ? "cancelled"
           : "incomplete";
   } finally {
+    try {
+      options.testOnAttemptCleanupStarted?.();
+    } catch {
+      cleanupFailures.push("attempt-cleanup-hook");
+    }
     clearTimeout(runTimer);
     options.signal?.removeEventListener("abort", onAbort);
     if (browserServer) {
@@ -972,6 +1011,7 @@ async function executeReviewedScenarioAttempt(
         const browserStop = await stopBrowserServer(
           browserServer,
           options.testCleanupFailure === "server-pending",
+          options.testCleanupFailure === "browser-state-unknown",
         );
         browserProcessStopped = browserStop.stopped;
         serverPendingCloseInjected = browserStop.injectedPendingClose;
@@ -1062,7 +1102,8 @@ export async function executeReviewedScenarios(
   options: ExecutionOptions = {},
 ): Promise<ExecutionSummary> {
   const { runTimeoutMs, retryCount } = validateOptions(options);
-  const deadline = performance.now() + runTimeoutMs;
+  const now = options.testNow ?? (() => performance.now());
+  const deadline = now() + runTimeoutMs;
   const runController = new AbortController();
   const onAbort = (): void => runController.abort("cancelled");
   options.signal?.addEventListener("abort", onAbort);
@@ -1089,46 +1130,45 @@ export async function executeReviewedScenarios(
             : "cancelled";
         break;
       }
-      const remainingMs = Math.floor(deadline - performance.now());
-      if (remainingMs < 50) {
+      const remainingMs = Math.floor(deadline - now());
+      if (remainingMs <= 0) {
         finalStatusOverride = "timed_out";
         break;
       }
-      const result = await executeReviewedScenarioAttempt({
-        ...options,
-        runTimeoutMs: Math.min(runTimeoutMs, remainingMs),
-        signal: runController.signal,
-      });
-      const injectedFailure =
-        result.status === "passed" &&
-        (options.testFailAttempts ?? []).includes(attemptNumber);
-      const attemptStatus = injectedFailure ? "failed" : result.status;
+      const result = await executeReviewedScenarioAttempt(
+        {
+          ...options,
+          runTimeoutMs: Math.min(runTimeoutMs, remainingMs),
+          signal: runController.signal,
+        },
+        attemptNumber,
+      );
       attempts.push({
         ...result,
         attemptNumber,
-        status: attemptStatus,
-        injectedFailure,
       });
 
-      if (options.signal?.aborted) {
-        finalStatusOverride = "cancelled";
-        break;
-      }
-      if (performance.now() >= deadline) {
-        finalStatusOverride = "timed_out";
-        break;
-      }
       const canRetry =
-        attemptStatus === "failed" &&
+        result.status === "failed" &&
         result.resourceCleanup.status === "confirmed" &&
         result.scenarios.every(
           (scenario) =>
             scenario.cleanupStatus === "confirmed" &&
             ["passed", "failed"].includes(scenario.status),
         ) &&
-        !runController.signal.aborted &&
         attemptNumber <= retryCount;
       if (!canRetry) {
+        break;
+      }
+      if (options.signal?.aborted || runController.signal.aborted) {
+        finalStatusOverride =
+          runController.signal.reason === "run-timeout"
+            ? "timed_out"
+            : "cancelled";
+        break;
+      }
+      if (now() >= deadline) {
+        finalStatusOverride = "timed_out";
         break;
       }
     }
