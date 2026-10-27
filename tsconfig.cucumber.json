@@ -10,6 +10,7 @@
     "noEmitOnError": true
   },
   "include": [
+    "src/validation/**/*.ts",
     "features/support/**/*.ts",
     "features/steps/**/*.ts",
     "scripts/**/*.ts"
