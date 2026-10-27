@@ -13,6 +13,7 @@ import {
   InputPreparationError,
   prepareScenarioInputs,
   type PreparedInputDescriptor,
+  type ReviewedFixtureFieldPolicy,
 } from "../../src/input-preparation";
 import {
   validateFeatureFile,
@@ -42,11 +43,33 @@ const approvedScenarioIds = [
   "approved-outline/row-a",
   "approved-outline/row-b",
 ];
+const reviewedFixturePolicy: ReviewedFixtureFieldPolicy = {
+  version: 1,
+  id: "synthetic-fixture-policy",
+  revision: "fixture-policy-review-1",
+  sharedFields: {},
+  scenarioFields: {
+    "approved-basic": {
+      displayName: { type: "string", maxLength: 64 },
+      genres: { type: "string-list", maxItems: 5, maxLength: 32 },
+    },
+    "approved-outline/row-a": {
+      action: { type: "string", maxLength: 32 },
+      expectedOutcome: { type: "string", maxLength: 32 },
+      genres: { type: "string-list", maxItems: 5, maxLength: 32 },
+    },
+    "approved-outline/row-b": {
+      action: { type: "string", maxLength: 32 },
+      expectedOutcome: { type: "string", maxLength: 32 },
+    },
+  },
+};
 
 class InputPreparationWorld extends World {
   inputJson = "";
   validation?: FeatureValidation;
   approval?: ScenarioApproval;
+  fixturePolicy = reviewedFixturePolicy;
   descriptor?: PreparedInputDescriptor;
   error?: unknown;
 
@@ -90,6 +113,7 @@ async function loadReviewedScenarios(
 
 function useApprovedFixture(world: InputPreparationWorld): void {
   world.inputJson = readFileSync(inputFixturePath, "utf8");
+  world.fixturePolicy = reviewedFixturePolicy;
   world.descriptor = undefined;
   world.error = undefined;
 }
@@ -134,15 +158,74 @@ Given(
 );
 
 Given(
-  "a scenario contains a secret-value field",
+  "a scenario has an unreviewed non-sensitive field",
   async function (this: InputPreparationWorld) {
     changeFixture(this, (input) => {
       const scenarios = input.scenarios as Record<string, unknown>[];
       const values = scenarios[0].values as Record<string, unknown>;
-      values.secretValue = {
-        classification: "secret",
-        value: "synthetic-only-value",
+      values.nickname = {
+        classification: "non-sensitive",
+        value: "Synthetic Alias",
       };
+    });
+    await loadReviewedScenarios(this);
+  },
+);
+
+Given(
+  "a reviewed fixture list exceeds its policy bound",
+  async function (this: InputPreparationWorld) {
+    changeFixture(this, (input) => {
+      const scenarios = input.scenarios as Record<string, unknown>[];
+      const values = scenarios[0].values as Record<string, unknown>;
+      (values.genres as Record<string, unknown>).value = [
+        "ambient",
+        "jazz",
+        "folk",
+        "rock",
+        "pop",
+        "blues",
+      ];
+    });
+    await loadReviewedScenarios(this);
+  },
+);
+
+Given(
+  "the fixture policy attempts to approve credential field {string}",
+  async function (this: InputPreparationWorld, field: string) {
+    changeFixture(this, (input) => {
+      const scenarios = input.scenarios as Record<string, unknown>[];
+      const values = scenarios[0].values as Record<string, unknown>;
+      values[field] = {
+        classification: "non-sensitive",
+        value: "synthetic-secret-value",
+      };
+    });
+    const scenarioFields = {
+      ...reviewedFixturePolicy.scenarioFields,
+      "approved-basic": {
+        ...reviewedFixturePolicy.scenarioFields["approved-basic"],
+        [field]: { type: "string" as const, maxLength: 64 },
+      },
+    };
+    this.fixturePolicy = {
+      ...reviewedFixturePolicy,
+      scenarioFields,
+    };
+    await loadReviewedScenarios(this);
+  },
+);
+
+Given(
+  "a reviewed fixture field is labelled secret",
+  async function (this: InputPreparationWorld) {
+    changeFixture(this, (input) => {
+      const scenarios = input.scenarios as Record<string, unknown>[];
+      const values = scenarios[0].values as Record<string, unknown>;
+      (values.displayName as Record<string, unknown>).classification = "secret";
+      (values.displayName as Record<string, unknown>).value =
+        "synthetic-secret-value";
     });
     await loadReviewedScenarios(this);
   },
@@ -214,6 +297,7 @@ When("I prepare the scenario inputs", function (this: InputPreparationWorld) {
       this.inputJson,
       this.validation,
       this.approval,
+      this.fixturePolicy,
     );
   } catch (error) {
     this.error = error;
@@ -225,6 +309,10 @@ Then(
   function (this: InputPreparationWorld) {
     assert.ok(this.descriptor);
     assert.equal(this.descriptor.version, 1);
+    assert.deepEqual(this.descriptor.fixturePolicy, {
+      id: "synthetic-fixture-policy",
+      revision: "fixture-policy-review-1",
+    });
     assert.equal(
       this.descriptor.environment.initialTargetUrl,
       "https://synthetic.example.test/demo",
@@ -244,6 +332,10 @@ Then(
       this.descriptor.scenarios[0].values.displayName,
       "Synthetic Visitor",
     );
+    assert.deepEqual(this.descriptor.scenarios[0].values.genres, [
+      "ambient",
+      "jazz",
+    ]);
   },
 );
 
@@ -254,7 +346,7 @@ Then(
     assert.equal(this.error.code, code);
     assert.doesNotMatch(
       this.error.message,
-      /synthetic-secret-value|outside\.example\.test|synthetic-only-value|access_token|synthetic-fragment/i,
+      /synthetic-secret-value|outside\.example\.test|synthetic-only-value|access_token|synthetic-fragment|Synthetic Alias/i,
     );
     assert.equal(this.descriptor, undefined);
   },

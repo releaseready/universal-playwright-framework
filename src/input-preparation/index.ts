@@ -29,7 +29,7 @@ const fixtureValueContentSchema = z.union([
 ]);
 const fixtureValueSchema = z
   .object({
-    classification: z.literal("non-sensitive"),
+    classification: z.enum(["non-sensitive", "secret"]),
     value: fixtureValueContentSchema,
   })
   .strict();
@@ -47,6 +47,87 @@ const fixtureValuesSchema = z
       context.addIssue({
         code: "custom",
         message: "Fixture fields are missing or exceed the limit",
+      });
+    }
+  });
+const fixtureFieldNameSchema = z
+  .string()
+  .max(64)
+  .regex(/^[A-Za-z][A-Za-z0-9_]*$/);
+const fixtureFieldSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("string"),
+      maxLength: z.number().int().min(1).max(512),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("string-list"),
+      maxItems: z.number().int().min(1).max(25),
+      maxLength: z.number().int().min(1).max(512),
+    })
+    .strict(),
+  z.object({ type: z.literal("number") }).strict(),
+  z.object({ type: z.literal("boolean") }).strict(),
+]);
+const fixtureFieldMapSchema = z
+  .record(fixtureFieldNameSchema, fixtureFieldSchema)
+  .superRefine((fields, context) => {
+    if (Object.keys(fields).length > 32) {
+      context.addIssue({
+        code: "custom",
+        message: "Fixture field limit exceeded",
+      });
+    }
+  });
+const fixturePolicySchema = z
+  .object({
+    version: z.literal(1),
+    id: identifierSchema,
+    revision: revisionSchema,
+    sharedFields: fixtureFieldMapSchema,
+    scenarioFields: z.record(scenarioIdSchema, fixtureFieldMapSchema),
+  })
+  .strict()
+  .superRefine((policy, context) => {
+    if (Object.keys(policy.scenarioFields).length > MAX_PREPARED_SCENARIOS) {
+      context.addIssue({
+        code: "custom",
+        message: "Scenario fixture policy limit exceeded",
+      });
+    }
+    const sharedNames = Object.keys(policy.sharedFields);
+    for (const fields of Object.values(policy.scenarioFields)) {
+      const fieldNames = Object.keys(fields);
+      if (fieldNames.length + sharedNames.length > 32) {
+        context.addIssue({
+          code: "custom",
+          message: "Scenario fixture field limit exceeded",
+        });
+      }
+      if (fieldNames.some((name) => sharedNames.includes(name))) {
+        context.addIssue({
+          code: "custom",
+          message: "Shared fixture fields cannot be redeclared",
+        });
+      }
+    }
+
+    const allFieldNames = [...sharedNames];
+    for (const fields of Object.values(policy.scenarioFields)) {
+      allFieldNames.push(...Object.keys(fields));
+    }
+    const credentialName =
+      /password|passwd|passcode|secret|token|credential|authorization|cookie|apikey|accesskey|privatekey/;
+    if (
+      allFieldNames.some((name) =>
+        credentialName.test(name.replace(/[^A-Za-z0-9]/g, "").toLowerCase()),
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Credential fields cannot be fixture data",
       });
     }
   });
@@ -91,6 +172,26 @@ const fixtureRevisionSchema = z
 
 export type CleanupOutcome = "restored" | "unrestored" | "unknown";
 
+export type ReviewedFixtureFieldSchema =
+  | { readonly type: "string"; readonly maxLength: number }
+  | {
+      readonly type: "string-list";
+      readonly maxItems: number;
+      readonly maxLength: number;
+    }
+  | { readonly type: "number" }
+  | { readonly type: "boolean" };
+
+export interface ReviewedFixtureFieldPolicy {
+  readonly version: 1;
+  readonly id: string;
+  readonly revision: string;
+  readonly sharedFields: Readonly<Record<string, ReviewedFixtureFieldSchema>>;
+  readonly scenarioFields: Readonly<
+    Record<string, Readonly<Record<string, ReviewedFixtureFieldSchema>>>
+  >;
+}
+
 export interface SecretReference {
   readonly id: string;
 }
@@ -131,6 +232,10 @@ export interface PreparedInputDescriptor {
     readonly featureRevision: string;
     readonly implementationRevision: string;
   };
+  readonly fixturePolicy: {
+    readonly id: string;
+    readonly revision: string;
+  };
   readonly fixtureRevision: string;
   readonly scenarios: readonly PreparedScenarioInputs[];
 }
@@ -142,7 +247,8 @@ export type InputPreparationErrorCode =
   | "target-outside-approved-origin"
   | "invalid-scenario-data"
   | "invalid-account-reference"
-  | "invalid-selection";
+  | "invalid-selection"
+  | "invalid-fixture-policy";
 
 export class InputPreparationError extends Error {
   constructor(
@@ -185,7 +291,7 @@ function copyValues(
   values: Record<
     string,
     {
-      classification: "non-sensitive";
+      classification: "non-sensitive" | "secret";
       value: string | number | boolean | string[];
     }
   >,
@@ -200,12 +306,74 @@ function copyValues(
   );
 }
 
+function fixtureValueMatches(
+  value: string | number | boolean | string[],
+  schema: ReviewedFixtureFieldSchema,
+): boolean {
+  switch (schema.type) {
+    case "string":
+      return typeof value === "string" && value.length <= schema.maxLength;
+    case "string-list":
+      return (
+        Array.isArray(value) &&
+        value.length <= schema.maxItems &&
+        value.every(
+          (item) => typeof item === "string" && item.length <= schema.maxLength,
+        )
+      );
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "boolean":
+      return typeof value === "boolean";
+  }
+}
+
+function fixtureFieldsMatchPolicy(
+  values: Record<
+    string,
+    {
+      classification: "non-sensitive" | "secret";
+      value: string | number | boolean | string[];
+    }
+  >,
+  policy: ReviewedFixtureFieldPolicy,
+  scenarioId: string,
+): boolean {
+  const fieldPolicy = {
+    ...policy.sharedFields,
+    ...policy.scenarioFields[scenarioId],
+  };
+  const fixtureNames = Object.keys(values).sort();
+  const policyNames = Object.keys(fieldPolicy).sort();
+  return (
+    fixtureNames.length === policyNames.length &&
+    fixtureNames.every((name, index) => {
+      const fixtureValue = values[name];
+      const fieldSchema = fieldPolicy[name];
+      return (
+        name === policyNames[index] &&
+        fixtureValue.classification === "non-sensitive" &&
+        fixtureValueMatches(fixtureValue.value, fieldSchema)
+      );
+    })
+  );
+}
+
 export function prepareScenarioInputs(
   inputJson: string,
   validation: FeatureValidation,
   approval: ScenarioApproval,
+  fixturePolicyInput: ReviewedFixtureFieldPolicy,
   filters: ScenarioSelectionFilters = {},
 ): PreparedInputDescriptor {
+  const fixturePolicyResult = fixturePolicySchema.safeParse(fixturePolicyInput);
+  if (!fixturePolicyResult.success) {
+    return fail(
+      "invalid-fixture-policy",
+      "Reviewed fixture field policy is missing or invalid",
+    );
+  }
+
   if (typeof inputJson !== "string") {
     return fail("invalid-json", "Input must be valid JSON text");
   }
@@ -306,6 +474,21 @@ export function prepareScenarioInputs(
       "Scenario fixture data must exactly match the approved selection",
     );
   }
+  const fixturePolicy = fixturePolicyResult.data as ReviewedFixtureFieldPolicy;
+  if (
+    selectedIds.some((id) => {
+      const scenario = scenarioInputs.find((candidate) => candidate.id === id);
+      return (
+        !scenario ||
+        !fixtureFieldsMatchPolicy(scenario.values, fixturePolicy, id ?? "")
+      );
+    })
+  ) {
+    return fail(
+      "invalid-scenario-data",
+      "Scenario fixture fields do not match the reviewed field policy",
+    );
+  }
 
   const accounts = new Map(
     fixtureResult.data.accounts.map((account) => [account.reference, account]),
@@ -381,6 +564,10 @@ export function prepareScenarioInputs(
       sourceRevision: validation.sourceRevision,
       featureRevision: validation.featureRevision,
       implementationRevision: validation.implementationRevision,
+    },
+    fixturePolicy: {
+      id: fixturePolicy.id,
+      revision: fixturePolicy.revision,
     },
     fixtureRevision: fixtureResult.data.fixtureRevision,
     scenarios: preparedScenarios,

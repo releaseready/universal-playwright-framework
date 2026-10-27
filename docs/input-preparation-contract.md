@@ -10,15 +10,26 @@ and account-reference copies.
 
 The inputs are bounded to 100 scenarios, 32 fields per scenario, 512 characters
 per text value, and 25 entries per text list. Each scenario requires at least
-one fixture field. Each fixture field value must explicitly use the
-`non-sensitive` classification; the schema rejects secret-classified values and
-extra fields. Fixture values are still trusted caller-provided synthetic data;
-preparation does not infer whether an arbitrary string contains a secret. Errors
-describe the invalid category without echoing input values. The initial target
-must be an HTTP(S) URL on the approved origin, without credentials, query, or
-fragment. The check is parsing only: caller approval is a trusted boundary, not
-authorization or a browser assertion. This slice does not navigate, make
-network requests, or enforce redirects.
+one fixture field. A caller supplies `prepareScenarioInputs` with a separate
+`ReviewedFixtureFieldPolicy`; a designated reviewer must approve this policy
+from the scenario contract before execution. It is not read from or derived
+from `inputJson`, and preparation never lets fixture data authorize its own
+field names or types. The policy defines shared and per-scenario fields with
+bounded string, string-list, number, or boolean types. Policy IDs and revisions
+are recorded in the prepared descriptor.
+
+Policy schemas reject credential-like field names, including password, secret,
+token, credential, and access-token fields. Each fixture value must also
+explicitly declare `non-sensitive`; secret classifications and fields absent
+from the external policy are rejected. This caller declaration is not automatic
+content inspection: undisclosed secrets embedded in otherwise approved text
+cannot reliably be detected. Errors describe the invalid category without
+echoing input values.
+
+The initial target must be an HTTP(S) URL on the approved origin, without
+credentials, query, or fragment. The check is parsing only: caller approval is
+a trusted boundary, not authorization or a browser assertion. This slice does
+not navigate, make network requests, or enforce redirects.
 
 `RuntimeSecretProvider` describes the injected runtime consumption boundary;
 input preparation does not accept or invoke a provider. Prepared account access

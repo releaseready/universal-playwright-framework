@@ -21,8 +21,32 @@ Feature: Prepare bounded inputs for reviewed synthetic scenarios
     Then preparation fails safely with "invalid-account-reference"
 
   @web-run-inputs-S02
-  Scenario: Reject a secret-value field safely
-    Given a scenario contains a secret-value field
+  Scenario: Reject an unreviewed non-sensitive fixture field
+    Given a scenario has an unreviewed non-sensitive field
+    When I prepare the scenario inputs
+    Then preparation fails safely with "invalid-scenario-data"
+
+  @web-run-inputs-S02
+  Scenario: Reject a reviewed list that exceeds its policy bound
+    Given a reviewed fixture list exceeds its policy bound
+    When I prepare the scenario inputs
+    Then preparation fails safely with "invalid-scenario-data"
+
+  @web-run-inputs-S02
+  Scenario Outline: Reject policy declarations for credential fixture fields
+    Given the fixture policy attempts to approve credential field "<field>"
+    When I prepare the scenario inputs
+    Then preparation fails safely with "invalid-fixture-policy"
+
+    Examples:
+      | field       |
+      | password    |
+      | secretValue |
+      | accessToken |
+
+  @web-run-inputs-S02
+  Scenario: Reject a reviewed fixture value classified as secret
+    Given a reviewed fixture field is labelled secret
     When I prepare the scenario inputs
     Then preparation fails safely with "invalid-scenario-data"
 
