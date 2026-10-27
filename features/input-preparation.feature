@@ -21,8 +21,8 @@ Feature: Prepare bounded inputs for reviewed synthetic scenarios
     Then preparation fails safely with "invalid-account-reference"
 
   @web-run-inputs-S02
-  Scenario: Reject sensitive fixture field names safely
-    Given a scenario contains a sensitive fixture field
+  Scenario: Reject a secret-value field safely
+    Given a scenario contains a secret-value field
     When I prepare the scenario inputs
     Then preparation fails safely with "invalid-scenario-data"
 
@@ -38,11 +38,29 @@ Feature: Prepare bounded inputs for reviewed synthetic scenarios
     When I prepare the scenario inputs
     Then preparation fails safely with "target-outside-approved-origin"
 
+  @web-run-inputs-S03
+  Scenario: Reject a same-origin blob target
+    Given the initial target uses a same-origin blob URL
+    When I prepare the scenario inputs
+    Then preparation fails safely with "target-outside-approved-origin"
+
+  @web-run-inputs-S03
+  Scenario: Reject a query containing a synthetic secret
+    Given the initial target contains a synthetic secret query
+    When I prepare the scenario inputs
+    Then preparation fails safely with "target-outside-approved-origin"
+
+  @web-run-inputs-S03
+  Scenario: Reject an initial target fragment
+    Given the initial target contains a fragment
+    When I prepare the scenario inputs
+    Then preparation fails safely with "target-outside-approved-origin"
+
   @web-run-inputs-S04
-  Scenario: Keep runtime secrets outside the serializable descriptor
+  Scenario: Keep prepared account access reference-only
     Given the approved synthetic fixture and reviewed scenarios
     When I prepare the scenario inputs
-    Then the injected synthetic secret remains outside the descriptor
+    Then prepared account access contains references only
 
   @web-run-inputs-S05
   Scenario: Isolate scenario fixture and account references

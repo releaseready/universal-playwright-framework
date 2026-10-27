@@ -12,9 +12,7 @@ import {
 import {
   InputPreparationError,
   prepareScenarioInputs,
-  type CleanupOutcome,
   type PreparedInputDescriptor,
-  type RuntimeSecretProvider,
 } from "../../src/input-preparation";
 import {
   validateFeatureFile,
@@ -136,12 +134,48 @@ Given(
 );
 
 Given(
-  "a scenario contains a sensitive fixture field",
+  "a scenario contains a secret-value field",
   async function (this: InputPreparationWorld) {
     changeFixture(this, (input) => {
       const scenarios = input.scenarios as Record<string, unknown>[];
       const values = scenarios[0].values as Record<string, unknown>;
-      values.password = "synthetic-only-value";
+      values.secretValue = "synthetic-only-value";
+    });
+    await loadReviewedScenarios(this);
+  },
+);
+
+Given(
+  "the initial target uses a same-origin blob URL",
+  async function (this: InputPreparationWorld) {
+    changeFixture(this, (input) => {
+      const environment = input.environment as Record<string, unknown>;
+      environment.initialTargetUrl =
+        "blob:https://synthetic.example.test/example";
+    });
+    await loadReviewedScenarios(this);
+  },
+);
+
+Given(
+  "the initial target contains a synthetic secret query",
+  async function (this: InputPreparationWorld) {
+    changeFixture(this, (input) => {
+      const environment = input.environment as Record<string, unknown>;
+      environment.initialTargetUrl =
+        "https://synthetic.example.test/demo?access_token=synthetic-secret-value";
+    });
+    await loadReviewedScenarios(this);
+  },
+);
+
+Given(
+  "the initial target contains a fragment",
+  async function (this: InputPreparationWorld) {
+    changeFixture(this, (input) => {
+      const environment = input.environment as Record<string, unknown>;
+      environment.initialTargetUrl =
+        "https://synthetic.example.test/demo#synthetic-fragment";
     });
     await loadReviewedScenarios(this);
   },
@@ -188,6 +222,10 @@ Then(
   function (this: InputPreparationWorld) {
     assert.ok(this.descriptor);
     assert.equal(this.descriptor.version, 1);
+    assert.equal(
+      this.descriptor.environment.initialTargetUrl,
+      "https://synthetic.example.test/demo",
+    );
     assert.deepEqual(this.descriptor.review, {
       sourceRevision: "synthetic-source-1",
       featureRevision: this.validation?.valid
@@ -213,34 +251,28 @@ Then(
     assert.equal(this.error.code, code);
     assert.doesNotMatch(
       this.error.message,
-      /synthetic-secret-that-must-not-leak|outside\.example\.test|synthetic-only-value/,
+      /synthetic-secret-value|outside\.example\.test|synthetic-only-value|access_token|synthetic-fragment/i,
     );
     assert.equal(this.descriptor, undefined);
   },
 );
 
 Then(
-  "the injected synthetic secret remains outside the descriptor",
-  async function (this: InputPreparationWorld) {
+  "prepared account access contains references only",
+  function (this: InputPreparationWorld) {
     assert.ok(this.descriptor);
-    const syntheticOnlySecret = "synthetic-secret-value-only";
-    const provider: RuntimeSecretProvider = {
-      async resolve(reference) {
-        assert.equal(reference.id, "synthetic-secret-basic");
-        return syntheticOnlySecret;
-      },
-    };
+    assert.deepEqual(this.descriptor.scenarios[0].account, {
+      reference: "synthetic-account-basic",
+      secretReference: { id: "synthetic-secret-basic" },
+    });
     assert.equal(
-      await provider.resolve({
-        id: this.descriptor.scenarios[0].account.secretReference.id,
-      }),
-      syntheticOnlySecret,
+      Object.hasOwn(this.descriptor.scenarios[0].account, "secretValue"),
+      false,
     );
     assert.doesNotMatch(
       JSON.stringify(this.descriptor),
-      /synthetic-secret-value-only/,
+      /synthetic-only-value/,
     );
-    assert.doesNotMatch(JSON.stringify(this.descriptor), /secretValue/);
   },
 );
 
@@ -272,12 +304,11 @@ Then(
   "cleanup remains required and unknown until runtime evidence",
   function (this: InputPreparationWorld) {
     assert.ok(this.descriptor);
-    const outcomes: CleanupOutcome[] = ["restored", "unrestored", "unknown"];
-    assert.deepEqual(outcomes, ["restored", "unrestored", "unknown"]);
     for (const scenario of this.descriptor.scenarios) {
       assert.equal(scenario.cleanup.required, true);
       assert.equal(scenario.cleanup.authorized, true);
       assert.match(scenario.cleanup.reference, /^synthetic-cleanup-/);
+      assert.equal(scenario.cleanup.authorizationRevision, "cleanup-review-1");
       assert.equal(scenario.cleanup.outcome, "unknown");
     }
   },

@@ -10,16 +10,21 @@ and account-reference copies.
 
 The inputs are bounded to 100 scenarios, 32 fields per scenario, 512 characters
 per text value, and 25 entries per text list. Each scenario requires at least
-one fixture field. Fixture field names that indicate credentials or secrets are
-rejected. Errors describe the invalid category
-without echoing input values. The initial target check is parsing only: caller
-approval is a trusted boundary, not authorization or a browser assertion. This
-slice does not navigate, make network requests, or enforce redirects.
+one fixture field. Only approved synthetic fixture field names are accepted.
+Fixture values are trusted caller-provided, non-sensitive synthetic data;
+preparation does not infer whether an arbitrary string contains a secret. Errors
+describe the invalid category without echoing input values. The initial target
+must be an HTTP(S) URL on the approved origin, without credentials, query, or
+fragment. The check is parsing only: caller approval is a trusted boundary, not
+authorization or a browser assertion. This slice does not navigate, make
+network requests, or enforce redirects.
 
 `RuntimeSecretProvider` describes the injected runtime consumption boundary;
-input preparation never calls it and secret values are not part of a prepared
-descriptor. Tests use synthetic values only. This interface does not provision
-or store credentials or connect to a secret manager.
+input preparation does not accept or invoke a provider. Prepared account access
+contains only account and secret reference identifiers. Runtime provider
+execution and confidentiality integration for CLI arguments, logs, and results
+remain execution-scope obligations; this slice does not establish those runtime
+guarantees or provision credentials.
 
 Each selected scenario must provide an explicitly authorized cleanup reference
 and its authorization revision. Preparation hands off `required: true` and

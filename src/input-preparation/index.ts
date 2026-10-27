@@ -9,6 +9,12 @@ import type { FeatureValidation } from "../validation/feature-validator";
 export const MAX_INPUT_DOCUMENT_BYTES = 64 * 1024;
 export const MAX_PREPARED_SCENARIOS = 100;
 
+const approvedFixtureFields = new Set([
+  "displayName",
+  "genres",
+  "action",
+  "expectedOutcome",
+]);
 const identifierSchema = z
   .string()
   .max(128)
@@ -44,15 +50,10 @@ const fixtureValuesSchema = z
       });
     }
     for (const [field] of entries) {
-      if (
-        /password|secret|token|credential|authorization|cookie|api[_-]?key/i.test(
-          field,
-        )
-      ) {
+      if (!approvedFixtureFields.has(field)) {
         context.addIssue({
           code: "custom",
-          path: [field],
-          message: "Sensitive fixture fields are not allowed",
+          message: "Fixture contains an unapproved field",
         });
       }
     }
@@ -247,13 +248,16 @@ export function prepareScenarioInputs(
   }
   if (
     !target ||
+    !["http:", "https:"].includes(target.protocol) ||
     target.origin !== origin.origin ||
     target.username !== "" ||
-    target.password !== ""
+    target.password !== "" ||
+    target.search !== "" ||
+    target.hash !== ""
   ) {
     return fail(
       "target-outside-approved-origin",
-      "Initial target must use the explicitly approved environment origin",
+      "Initial target must be an HTTP(S) URL on the approved origin without query or fragment",
     );
   }
 
