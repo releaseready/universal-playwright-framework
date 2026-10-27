@@ -78,9 +78,9 @@ function hashImplementation(): string {
     "features/execution/support/hooks.ts",
   ]) {
     hash.update(relativePath).update("\0");
-    hash.update(readFileSync(path.join(REPOSITORY_ROOT, relativePath))).update(
-      "\0",
-    );
+    hash
+      .update(readFileSync(path.join(REPOSITORY_ROOT, relativePath)))
+      .update("\0");
   }
   hash.update(JSON.stringify(stepManifest.steps)).update("\0");
   hash.update(JSON.stringify(reviewedFixturePolicy)).update("\0");
