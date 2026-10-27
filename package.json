@@ -19,7 +19,7 @@
     "test:input-preparation": "npm run build:cucumber && cucumber-js --config cucumber-input-preparation.json",
     "test:validation": "npm run build:cucumber && node --test dist/cucumber/scripts/feature-validation.test.js",
     "test:features": "npm run build:cucumber && cucumber-js --config cucumber.json",
-    "test:execution": "npm run build:cucumber && node --test dist/cucumber/scripts/execution-adapter.test.js",
+    "test:execution": "npm run build:cucumber && node --test dist/cucumber/scripts/execution-adapter.test.js && cucumber-js --config cucumber-retry-regression.json",
     "execute:synthetic": "npm run build:cucumber && node dist/cucumber/src/execution/cli.js",
     "test:features:regression": "npm run test:input-preparation && npm run test:validation && npm run test:features && npm run test:execution && node --test dist/cucumber/scripts/cucumber-timeouts.test.js",
     "report": "playwright show-report",
