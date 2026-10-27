@@ -13,7 +13,8 @@ Scenario, and Examples tags. Review approvals record those IDs and tags with
 the feature path, caller-supplied source revision, feature content hash, and
 step-implementation revision. Any revision mismatch makes the approval stale.
 The caller must advance the implementation revision whenever reviewed step
-code changes.
+code changes. Descriptor containment is verified on Linux and macOS; other
+platforms fail closed until a safe descriptor-path API is available.
 
 The selector returns only runnable approved scenarios that match all requested
 IDs and tags. A zero-match result is not runnable. Validation or approval is

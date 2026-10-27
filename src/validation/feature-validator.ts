@@ -170,9 +170,13 @@ async function readFeatureFile(
       return { reason: "Feature path must identify a regular file" };
     }
     const descriptorPath = getDescriptorPath(handle.fd);
-    const openedPath = descriptorPath
-      ? await realpath(descriptorPath)
-      : canonicalPath;
+    if (!descriptorPath) {
+      return {
+        reason:
+          "Workspace-safe file descriptor verification is unavailable on this platform",
+      };
+    }
+    const openedPath = await realpath(descriptorPath);
     if (!isWithinDirectory(workspacePath, openedPath)) {
       return { reason: "Feature path must stay within the workspace" };
     }
