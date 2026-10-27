@@ -195,6 +195,43 @@ test("server closes when browser close rejects and the browser error is preserve
   }
 });
 
+test("server closes within a bound when browser close never settles", async () => {
+  const browserCloseTimeoutMs = 100;
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const browser = {
+    close: () => new Promise<void>(() => {}),
+  } as Pick<Browser, "close">;
+  const startedAt = Date.now();
+
+  try {
+    await assert.rejects(
+      closeRuntime(browser, server, browserCloseTimeoutMs),
+      new RegExp(
+        `Browser close did not finish within ${browserCloseTimeoutMs} ms; browser shutdown status is unknown`,
+      ),
+    );
+    assert.equal(
+      server.listening,
+      false,
+      "HTTP listener must close after browser-close timeout",
+    );
+    assert.ok(
+      Date.now() - startedAt < 1_000,
+      "cleanup should finish shortly after the bounded browser-close timeout",
+    );
+  } finally {
+    if (server.listening) {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  }
+});
+
 test("both cleanup failures are attempted and preserved", async () => {
   const browserError = new Error("browser close failed");
   const serverError = new Error("server close failed");
