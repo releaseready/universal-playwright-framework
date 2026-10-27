@@ -10,7 +10,9 @@
     "noEmitOnError": true
   },
   "include": [
+    "src/input-preparation/**/*.ts",
     "src/validation/**/*.ts",
+    "features/input-preparation/**/*.ts",
     "features/support/**/*.ts",
     "features/steps/**/*.ts",
     "scripts/**/*.ts"

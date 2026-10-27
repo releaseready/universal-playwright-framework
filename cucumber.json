@@ -1,6 +1,7 @@
 {
   "default": {
     "paths": ["features/**/*.feature"],
+    "tags": "not @web-run-inputs",
     "require": [
       "dist/cucumber/features/support/hooks.js",
       "dist/cucumber/features/steps/synthetic.steps.js"

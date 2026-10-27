@@ -16,9 +16,10 @@
     "test:mobile": "playwright test --project=mobile-chrome",
     "test:parallel": "playwright test --workers=4",
     "build:cucumber": "tsc --project tsconfig.cucumber.json",
+    "test:input-preparation": "npm run build:cucumber && cucumber-js --config cucumber-input-preparation.json",
     "test:validation": "npm run build:cucumber && node --test dist/cucumber/scripts/feature-validation.test.js",
     "test:features": "npm run build:cucumber && cucumber-js --config cucumber.json",
-    "test:features:regression": "npm run test:validation && npm run test:features && node --test dist/cucumber/scripts/cucumber-timeouts.test.js",
+    "test:features:regression": "npm run test:input-preparation && npm run test:validation && npm run test:features && node --test dist/cucumber/scripts/cucumber-timeouts.test.js",
     "report": "playwright show-report",
     "report:allure": "allure serve allure-results",
     "clean": "rimraf dist reports screenshots test-results",
@@ -65,7 +66,8 @@
   },
   "dependencies": {
     "dotenv": "^16.3.0",
-    "faker": "^6.6.6"
+    "faker": "^6.6.6",
+    "zod": "4.6.7"
   },
   "files": [
     "dist",

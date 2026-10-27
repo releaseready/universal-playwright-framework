@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "fixtureRevision": "synthetic-fixtures-1",
+  "environment": {
+    "id": "synthetic-review",
+    "revision": "environment-1",
+    "approvedOrigin": "https://synthetic.example.test",
+    "initialTargetUrl": "https://synthetic.example.test/demo"
+  },
+  "accounts": [
+    {
+      "reference": "synthetic-account-basic",
+      "secretReference": "synthetic-secret-basic"
+    },
+    {
+      "reference": "synthetic-account-row-a",
+      "secretReference": "synthetic-secret-row-a"
+    },
+    {
+      "reference": "synthetic-account-row-b",
+      "secretReference": "synthetic-secret-row-b"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "approved-basic",
+      "values": {
+        "displayName": "Synthetic Visitor",
+        "genres": ["ambient", "jazz"]
+      },
+      "accountReference": "synthetic-account-basic",
+      "cleanup": {
+        "reference": "synthetic-cleanup-basic",
+        "authorizationRevision": "cleanup-review-1",
+        "authorized": true
+      }
+    },
+    {
+      "id": "approved-outline/row-a",
+      "values": {
+        "action": "alpha",
+        "expectedOutcome": "ready",
+        "genres": ["ambient", "jazz"]
+      },
+      "accountReference": "synthetic-account-row-a",
+      "cleanup": {
+        "reference": "synthetic-cleanup-row-a",
+        "authorizationRevision": "cleanup-review-1",
+        "authorized": true
+      }
+    },
+    {
+      "id": "approved-outline/row-b",
+      "values": {
+        "action": "beta",
+        "expectedOutcome": "done"
+      },
+      "accountReference": "synthetic-account-row-b",
+      "cleanup": {
+        "reference": "synthetic-cleanup-row-b",
+        "authorizationRevision": "cleanup-review-1",
+        "authorized": true
+      }
+    }
+  ]
+}
