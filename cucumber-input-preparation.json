@@ -1,0 +1,7 @@
+{
+  "default": {
+    "paths": ["features/input-preparation.feature"],
+    "require": ["dist/cucumber/features/input-preparation/steps.js"],
+    "format": ["progress"]
+  }
+}
