@@ -149,7 +149,7 @@ const cleanupSchema = z
   .object({
     reference: identifierSchema,
     authorizationRevision: revisionSchema,
-    authorized: z.literal(true),
+    requested: z.literal(true),
   })
   .strict();
 const scenarioInputSchema = z
@@ -211,10 +211,10 @@ export interface PreparedScenarioInputs {
     readonly secretReference: SecretReference;
   };
   readonly cleanup: {
-    readonly required: true;
+    readonly requested: true;
+    readonly authorizationStatus: "unverified";
     readonly reference: string;
-    readonly authorizationRevision: string;
-    readonly authorized: true;
+    readonly requestedRevision: string;
     readonly outcome: CleanupOutcome;
   };
 }
@@ -532,10 +532,10 @@ export function prepareScenarioInputs(
         secretReference: { id: account.secretReference },
       },
       cleanup: {
-        required: true as const,
+        requested: true as const,
+        authorizationStatus: "unverified" as const,
         reference: fixture.cleanup.reference,
-        authorizationRevision: fixture.cleanup.authorizationRevision,
-        authorized: true as const,
+        requestedRevision: fixture.cleanup.authorizationRevision,
         outcome: "unknown" as const,
       },
     };

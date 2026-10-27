@@ -97,3 +97,15 @@ Feature: Prepare bounded inputs for reviewed synthetic scenarios
     Given the approved synthetic fixture and reviewed scenarios
     When I prepare the scenario inputs
     Then cleanup remains required and unknown until runtime evidence
+
+  @web-run-inputs-S06
+  Scenario: Reject fixture authorization claim
+    Given cleanup input claims it is authorized
+    When I prepare the scenario inputs
+    Then preparation rejects the unauthorized cleanup claim safely
+
+  @web-run-inputs-S06
+  Scenario: Reject arbitrary fixture authorization claims
+    Given cleanup input contains an arbitrary authorization claim
+    When I prepare the scenario inputs
+    Then preparation rejects the unauthorized cleanup claim safely

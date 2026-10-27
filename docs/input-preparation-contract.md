@@ -38,11 +38,17 @@ execution and confidentiality integration for CLI arguments, logs, and results
 remain execution-scope obligations; this slice does not establish those runtime
 guarantees or provision credentials.
 
-Each selected scenario must provide an explicitly authorized cleanup reference
-and its authorization revision. Preparation hands off `required: true` and
-`outcome: "unknown"`; runtime evidence is required before reporting a restored
-or unrestored outcome. No reset action is executed here. Browser-context/session
-isolation and cleanup execution remain later runtime work.
+Each selected scenario may request cleanup with a synthetic cleanup reference
+and requested revision. The cleanup request has no `authorized` field:
+caller-provided authorization claims are rejected by the strict input schema.
+Preparation represents a valid request as
+`requested: true`, `authorizationStatus: "unverified"`, and
+`outcome: "unknown"`; caller-provided fixture input cannot grant cleanup
+authority. RRDWEB-4 must independently authorize cleanup before execution and
+provide runtime evidence before reporting restored or unrestored. No reset
+action is executed here, and this contract makes no claim about downstream
+fail-closed enforcement. Browser-context/session isolation and cleanup
+execution remain later runtime work.
 
 Run the focused checks with `npm run test:input-preparation`; the local
 `npm run test:features:regression` aggregate includes them.

@@ -38,7 +38,7 @@
       "cleanup": {
         "reference": "synthetic-cleanup-basic",
         "authorizationRevision": "cleanup-review-1",
-        "authorized": true
+        "requested": true
       }
     },
     {
@@ -61,7 +61,7 @@
       "cleanup": {
         "reference": "synthetic-cleanup-row-a",
         "authorizationRevision": "cleanup-review-1",
-        "authorized": true
+        "requested": true
       }
     },
     {
@@ -80,7 +80,7 @@
       "cleanup": {
         "reference": "synthetic-cleanup-row-b",
         "authorizationRevision": "cleanup-review-1",
-        "authorized": true
+        "requested": true
       }
     }
   ]

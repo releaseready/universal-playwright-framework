@@ -232,6 +232,32 @@ Given(
 );
 
 Given(
+  "cleanup input claims it is authorized",
+  async function (this: InputPreparationWorld) {
+    changeFixture(this, (input) => {
+      const scenarios = input.scenarios as Record<string, unknown>[];
+      const cleanup = scenarios[0].cleanup as Record<string, unknown>;
+      cleanup.authorized = true;
+      cleanup.requested = true;
+    });
+    await loadReviewedScenarios(this);
+  },
+);
+
+Given(
+  "cleanup input contains an arbitrary authorization claim",
+  async function (this: InputPreparationWorld) {
+    changeFixture(this, (input) => {
+      const scenarios = input.scenarios as Record<string, unknown>[];
+      const cleanup = scenarios[0].cleanup as Record<string, unknown>;
+      delete cleanup.requested;
+      cleanup.authorized = true;
+    });
+    await loadReviewedScenarios(this);
+  },
+);
+
+Given(
   "the initial target uses a same-origin blob URL",
   async function (this: InputPreparationWorld) {
     changeFixture(this, (input) => {
@@ -400,11 +426,21 @@ Then(
   function (this: InputPreparationWorld) {
     assert.ok(this.descriptor);
     for (const scenario of this.descriptor.scenarios) {
-      assert.equal(scenario.cleanup.required, true);
-      assert.equal(scenario.cleanup.authorized, true);
+      assert.equal(scenario.cleanup.requested, true);
+      assert.equal(scenario.cleanup.authorizationStatus, "unverified");
       assert.match(scenario.cleanup.reference, /^synthetic-cleanup-/);
-      assert.equal(scenario.cleanup.authorizationRevision, "cleanup-review-1");
+      assert.equal(scenario.cleanup.requestedRevision, "cleanup-review-1");
       assert.equal(scenario.cleanup.outcome, "unknown");
     }
+  },
+);
+
+Then(
+  "preparation rejects the unauthorized cleanup claim safely",
+  function (this: InputPreparationWorld) {
+    assert.ok(this.error instanceof InputPreparationError);
+    assert.equal(this.error.code, "invalid-scenario-data");
+    assert.doesNotMatch(this.error.message, /cleanup-review|synthetic-cleanup/);
+    assert.equal(this.descriptor, undefined);
   },
 );
