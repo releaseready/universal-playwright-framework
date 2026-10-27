@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   validateFeatureFile,
@@ -14,10 +14,10 @@ export const REVIEWED_FEATURE_PATH =
 export const INPUT_FIXTURE_PATH = "fixtures/execution/approved-inputs.json";
 
 export const REVIEWED_SOURCE_REVISION = "rrdweb4-synthetic-source-1";
-const REVIEWED_FEATURE_REVISION =
+export const REVIEWED_FEATURE_REVISION =
   "c916c0e7ad8efab755c669578827870c5fdfb48e53536362715d7dfdfcc31268";
-const REVIEWED_IMPLEMENTATION_REVISION =
-  "91289d76cb8d82e0c4174eae6bb33695460c8eab90d90428036107141ac9b912";
+export const REVIEWED_IMPLEMENTATION_REVISION =
+  "01ff7b1f068e110a7738b31f965ad2ea096a7c8baa7c9c35b66e698c149d31b5";
 
 const stepManifest: ReviewedStepManifest = {
   implementationRevision: REVIEWED_IMPLEMENTATION_REVISION,
@@ -101,13 +101,43 @@ function hashFile(relativePath: string): string {
     .digest("hex");
 }
 
-function hashImplementation(): string {
+const RUNTIME_DEPENDENCIES = [
+  "@cucumber/cucumber",
+  "@cucumber/cucumber-expressions",
+  "@cucumber/gherkin",
+  "@playwright/test",
+  "playwright",
+  "playwright-core",
+  "zod",
+] as const;
+
+export function runtimePackagePath(name: string): string {
+  let directory = path.dirname(
+    require.resolve(name, { paths: [REPOSITORY_ROOT] }),
+  );
+  while (directory !== path.dirname(directory)) {
+    const manifest = path.join(directory, "package.json");
+    if (existsSync(manifest)) {
+      const identity = JSON.parse(readFileSync(manifest, "utf8")) as {
+        name?: string;
+        version?: string;
+      };
+      if (identity.name === name && typeof identity.version === "string")
+        return manifest;
+    }
+    directory = path.dirname(directory);
+  }
+  throw new Error("Reviewed runtime package manifest is unavailable");
+}
+
+export function calculateReviewedImplementationRevision(): string {
   const hash = createHash("sha256");
   for (const relativePath of [
     "cucumber-execution.json",
     "tsconfig.cucumber.json",
     "package.json",
-    "package-lock.json",
+    "src/adapter/v1.ts",
+    "dist/cucumber/src/adapter/v1.js",
     "src/execution/index.ts",
     "src/reporting/index.ts",
     "src/reporting/output.ts",
@@ -130,10 +160,6 @@ function hashImplementation(): string {
     "dist/cucumber/features/execution/support/hooks.js",
     "dist/cucumber/features/execution/support/world.js",
     "dist/cucumber/features/support/step-timeout.js",
-    "node_modules/@cucumber/cucumber/package.json",
-    "node_modules/@playwright/test/package.json",
-    "node_modules/playwright/package.json",
-    "node_modules/playwright-core/package.json",
   ]) {
     hash.update(relativePath).update("\0");
     const bytes = readFileSync(path.join(REPOSITORY_ROOT, relativePath));
@@ -145,33 +171,33 @@ function hashImplementation(): string {
         : bytes;
     hash.update(normalized).update("\0");
   }
+  for (const name of RUNTIME_DEPENDENCIES) {
+    hash.update(name).update("\0");
+    hash.update(readFileSync(runtimePackagePath(name))).update("\0");
+  }
   hash.update(JSON.stringify(stepManifest.steps)).update("\0");
   hash.update(JSON.stringify(reviewedFixturePolicy)).update("\0");
   hash.update(readFileSync(path.join(REPOSITORY_ROOT, INPUT_FIXTURE_PATH)));
   return hash.digest("hex");
 }
 
-function dependenciesMatchLockfile(): boolean {
+function dependenciesMatchPackage(): boolean {
   try {
-    const lock = JSON.parse(
-      readFileSync(path.join(REPOSITORY_ROOT, "package-lock.json"), "utf8"),
-    ) as { packages?: Record<string, { version?: string }> };
-    return [
-      "@cucumber/cucumber",
-      "@playwright/test",
-      "playwright",
-      "playwright-core",
-    ].every((name) => {
-      const location = `node_modules/${name}`;
-      const lockedVersion = lock.packages?.[location]?.version;
+    const manifest = JSON.parse(
+      readFileSync(path.join(REPOSITORY_ROOT, "package.json"), "utf8"),
+    ) as { dependencies: Record<string, string> };
+    return RUNTIME_DEPENDENCIES.every((name) => {
+      const pinnedVersion =
+        manifest.dependencies[
+          name === "playwright" || name === "playwright-core"
+            ? "@playwright/test"
+            : name
+        ];
       const installed = JSON.parse(
-        readFileSync(
-          path.join(REPOSITORY_ROOT, location, "package.json"),
-          "utf8",
-        ),
+        readFileSync(runtimePackagePath(name), "utf8"),
       ) as { version?: string };
       return (
-        typeof lockedVersion === "string" && installed.version === lockedVersion
+        typeof pinnedVersion === "string" && installed.version === pinnedVersion
       );
     });
   } catch {
@@ -184,9 +210,10 @@ export async function loadReviewedScenarios(): Promise<{
   readonly validation: Awaited<ReturnType<typeof validateFeatureFile>>;
 }> {
   if (
-    !dependenciesMatchLockfile() ||
+    !dependenciesMatchPackage() ||
     hashFile(REVIEWED_FEATURE_PATH) !== REVIEWED_FEATURE_REVISION ||
-    hashImplementation() !== REVIEWED_IMPLEMENTATION_REVISION
+    calculateReviewedImplementationRevision() !==
+      REVIEWED_IMPLEMENTATION_REVISION
   ) {
     throw new Error("Pinned synthetic scenario review is stale");
   }
