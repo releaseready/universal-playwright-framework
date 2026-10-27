@@ -126,8 +126,9 @@ not a pre-acquisition rejection or a fabricated successful attempt.
 An optional third-argument `AbortSignal` cancels only this call's owned execution.
 An already aborted signal starts no runtime. Abort reasons are not exported.
 Concurrent calls have independent cancellation and resource ownership.
-Late cancellation during completed-attempt cleanup does not overwrite the actual
-pass/failure. Unconfirmed cleanup preserves failure/uncertainty, never a successful
+Late cancellation during terminal-attempt cleanup does not overwrite a completed
+pass. Cancellation before a retry prevents further work but retains the failed
+attempt. Unconfirmed cleanup preserves failure/uncertainty, never a successful
 cancellation claim. Deadlines include execution; bounded teardown can take extra time.
 
 ReleaseReady must persist the caller/run mapping, request approval/input references,
@@ -192,4 +193,58 @@ this is deferred to **RRDPLAT-28**, not suppressed or repaired in this slice.
 PR17 was platform-created as a **draft** and is not marked ready or merged here.
 Independent final review and actual bot findings remain owner gates.
 
-Captured command stdout/exit results are recorded below after final verification.
+### Review evidence (implementation commit `7fdea5e`)
+
+No hosted validation was dispatched, rerun, enabled or reconfigured.
+The final batch used Node v24.22.1; Cucumber warns that this Node version has not
+been tested by its maintainers. It completed successfully despite that warning.
+No application/customer-target Playwright matrix was run.
+
+| Command                                              |   Exit | Captured stdout/result                                                                                                                                  |
+| ---------------------------------------------------- | -----: | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm ci --ignore-scripts`                            |      0 | `added 296 packages`; baseline `20 vulnerabilities (6 moderate, 14 high)`                                                                               |
+| Initial `npm run build:cucumber` (TDD red)           |      1 | Missing adapter module and revision exports, as expected before implementation                                                                          |
+| Two early focused adapter iterations                 | 1 each | `tests 5`, `pass 1`, `fail 4`; fail-closed manifest resolution, then exact input-selection mismatch                                                     |
+| Focused direct/adapter contract after projection fix |      0 | `tests 1`, `pass 1`, `fail 0`, `skipped 0`                                                                                                              |
+| Remaining focused contracts                          |      0 | `tests 4`, `pass 4`, `fail 0`, `skipped 0`                                                                                                              |
+| Initial BDD / isolated S05 diagnostic                | 1 each | `5 scenarios (1 failed, 4 passed)` / `1 scenario (1 failed)`; missing packaged reviewed TypeScript glue, with one dependent step skipped per failed run |
+| Fixed isolated S05                                   |      0 | `1 scenario (1 passed)`, `3 steps (3 passed)`                                                                                                           |
+| `npx playwright install chromium`                    |      0 | Official Chromium 140.0.7339.186, build v1193, plus matching headless shell and FFmpeg                                                                  |
+| Final `npm run build`                                |      0 | `tsc --outDir dist/cucumber` and strict `tsc --project tsconfig.cucumber.json` completed                                                                |
+| Final `npm run test:features:regression`             |      0 | **41 scenarios + 46 Node tests passed**, no aggregate failures/skips                                                                                    |
+| Final `npm run format:check`                         |      0 | `All matched files use Prettier code style!`                                                                                                            |
+| Final owned-file `prettier --check`                  |      0 | Same success for new scripts/glue, JSON/configuration and docs                                                                                          |
+| Final `npm run lint`                                 |      2 | `ESLint couldn't find a configuration file.` — baseline RRDPLAT-28                                                                                      |
+| Final `git diff --check`                             |      0 | No output                                                                                                                                               |
+| Secret scan / CodeQL                                 |  clean | No secrets; JavaScript analysis found **0 alerts**                                                                                                      |
+
+Final aggregate stdout counts, without flattening scenarios into unit tests:
+
+```text
+input preparation: 19 scenarios (19 passed), 57 steps (57 passed)
+feature validation: tests 6, pass 6, fail 0, skipped 0
+synthetic feature: 1 scenario (1 passed), 4 steps (4 passed)
+execution contracts: tests 21, pass 21, fail 0, skipped 0
+retry acceptance: 10 scenarios (10 passed), 23 steps (23 passed)
+timeout/cleanup contracts: tests 7, pass 7, fail 0, skipped 0
+reporting contracts: tests 7, pass 7, fail 0, skipped 0
+reporting acceptance: 6 scenarios (6 passed), 18 steps (18 passed)
+adapter contracts: tests 5, pass 5, fail 0, skipped 0
+adapter acceptance: 5 scenarios (5 passed), 15 steps (15 passed)
+Installed immutable tarball sha256=10c077f03ca11be26a9392064e70f571dd355cbf7734a95b089b53082ab83599
+added 153 packages, and audited 154 packages
+7 vulnerabilities (5 moderate, 2 high)
+```
+
+That digest identifies the tested implementation tarball; this handoff is a
+subsequent documentation-only change, not a claim that its changed documentation
+has the same tarball digest. Full command output is retained for this session in
+`/tmp/rrdweb6-final-*.log`; focused failure/success logs use `/tmp/rrdweb6-*.log`.
+The source install after the necessary Playwright patch reported 18 remaining
+audit findings (6 moderate, 12 high); the independent production-only consumer
+reported the 7 above. Neither audit output is hidden or treated as a clean audit.
+
+At implementation review, Gitar reported “No issues found” and a successful
+check, but explicitly “Functional validation: Not enabled.” There were no review
+threads. This does not substitute for the owner's final independent review/tests
+or clear future bot findings. S03/S06 and durable central persistence remain open.
