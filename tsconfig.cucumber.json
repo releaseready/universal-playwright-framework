@@ -10,11 +10,13 @@
     "noEmitOnError": true
   },
   "include": [
+    "src/adapter/**/*.ts",
     "src/input-preparation/**/*.ts",
     "src/execution/**/*.ts",
     "src/reporting/**/*.ts",
     "src/validation/**/*.ts",
     "features/execution/**/*.ts",
+    "features/adapter/**/*.ts",
     "features/reporting/**/*.ts",
     "features/input-preparation/**/*.ts",
     "features/support/**/*.ts",

@@ -18,6 +18,7 @@ import {
   REPOSITORY_ROOT,
   REVIEWED_FEATURE_PATH,
   reviewedFixturePolicy,
+  runtimePackagePath,
 } from "./reviewed-scenarios";
 
 export const MAX_EXECUTION_SCENARIOS = 6;
@@ -157,8 +158,8 @@ interface BrowserStopResult {
 }
 
 const CUCUMBER_BIN = path.join(
-  REPOSITORY_ROOT,
-  "node_modules/@cucumber/cucumber/bin/cucumber.js",
+  path.dirname(runtimePackagePath("@cucumber/cucumber")),
+  "bin/cucumber.js",
 );
 const CUCUMBER_CONFIG = "cucumber-execution.json";
 const DEFAULT_RUN_TIMEOUT_MS = 90_000;
@@ -210,7 +211,7 @@ function validateOptions(
   return { runTimeoutMs, scenarioTimeoutMs, concurrency, retryCount };
 }
 
-function makeFixtureInput(
+export function makeFixtureInput(
   selectedIds: readonly string[],
   approvedOrigin: string,
 ): string {

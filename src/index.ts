@@ -28,3 +28,11 @@ export type {
 
 // Framework version
 export const FRAMEWORK_VERSION = "1.0.0";
+
+export { executeAdapter } from "./adapter/v1";
+export type {
+  AdapterRequest,
+  AdapterResult,
+  AdapterError,
+  TrustedAdapterContext,
+} from "./adapter/v1";
