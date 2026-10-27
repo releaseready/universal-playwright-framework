@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { open, realpath } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { open, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   AstBuilder,
@@ -104,6 +105,23 @@ function isWithinDirectory(directory: string, candidate: string): boolean {
   );
 }
 
+function isSameFile(
+  left: Awaited<ReturnType<typeof stat>>,
+  right: Awaited<ReturnType<typeof stat>>,
+): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+function getDescriptorPath(fileDescriptor: number): string | undefined {
+  if (process.platform === "linux") {
+    return `/proc/self/fd/${fileDescriptor}`;
+  }
+  if (process.platform === "darwin") {
+    return `/dev/fd/${fileDescriptor}`;
+  }
+  return undefined;
+}
+
 async function readFeatureFile(
   input: ValidateFeatureInput,
 ): Promise<FileReadResult> {
@@ -142,10 +160,29 @@ async function readFeatureFile(
       return { reason: "Feature path must stay within the workspace" };
     }
 
-    handle = await open(canonicalPath, "r");
+    const openFlags =
+      fsConstants.O_RDONLY |
+      (fsConstants.O_NONBLOCK ?? 0) |
+      (fsConstants.O_NOFOLLOW ?? 0);
+    handle = await open(canonicalPath, openFlags);
     const fileStats = await handle.stat();
     if (!fileStats.isFile()) {
       return { reason: "Feature path must identify a regular file" };
+    }
+    const descriptorPath = getDescriptorPath(handle.fd);
+    const openedPath = descriptorPath
+      ? await realpath(descriptorPath)
+      : canonicalPath;
+    if (!isWithinDirectory(workspacePath, openedPath)) {
+      return { reason: "Feature path must stay within the workspace" };
+    }
+    const verifiedPath = await realpath(unresolvedPath);
+    if (!isWithinDirectory(workspacePath, verifiedPath)) {
+      return { reason: "Feature path must stay within the workspace" };
+    }
+    const verifiedStats = await stat(verifiedPath);
+    if (!isSameFile(fileStats, verifiedStats)) {
+      return { reason: "Feature path changed while it was being opened" };
     }
     if (fileStats.size > MAX_FEATURE_BYTES) {
       return {
@@ -179,7 +216,7 @@ async function readFeatureFile(
 
     return {
       bytes: Buffer.concat(chunks, totalBytes),
-      canonicalPath,
+      canonicalPath: verifiedPath,
       workspacePath,
     };
   } catch {
