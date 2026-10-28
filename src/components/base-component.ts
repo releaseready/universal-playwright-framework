@@ -4,7 +4,7 @@
  */
 
 import { Locator, Page } from "@playwright/test";
-import { Logger } from "@utils/logger";
+import { Logger } from "../utils/logger";
 
 export abstract class BaseComponent {
   protected page: Page;

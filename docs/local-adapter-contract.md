@@ -164,13 +164,18 @@ change, then explicitly update the committed implementation pin and both pinned
 JSON examples together. The installed smoke also modifies a packaged worker and
 proves that the same call subsequently rejects stale approval.
 
-Playwright was patched from inherited 1.54.1 to exact 1.55.1 solely to address the
-browser-download certificate advisory found by npm audit. The other promoted
-runtime dependencies retain their reviewed versions. No broad audit-fix churn
-was applied; inherited audit findings remain (including fixed-config parser/glob
-dependency chains and unrelated existing faker/lint dependencies). This boundary
-accepts no caller-provided files, YAML, glob expressions or executable options.
-It is not a claim that the entire dependency tree is advisory-free.
+Playwright remains pinned to 1.55.1. The runtime remediation uses official
+Cucumber 12.9.0 and Gherkin 38.0.0, removing the affected nested UUID chain and
+resolving maintained glob/minimatch dependencies without overrides. Cucumber
+12.3.0 was evaluated but retained the UUID advisory through Gherkin utilities.
+Unused `faker` was removed; the installed consumer checks the existing public
+`TestDataFactory` and root adapter export. No public export was removed.
+
+The package requires Node 22.12 or later in the Node 22 line, or Node 24 or later;
+validation uses Node 22.23.4. The production-only audit is clean for this
+candidate. Development tooling findings remain outside this runtime repair;
+this is not a claim that the entire dependency tree is advisory-free. No audit
+suppression, dependency override or broad automatic audit fix is used.
 
 ## Checks and review handoff
 
@@ -248,3 +253,27 @@ At implementation review, Gitar reported “No issues found” and a successful
 check, but explicitly “Functional validation: Not enabled.” There were no review
 threads. This does not substitute for the owner's final independent review/tests
 or clear future bot findings. S03/S06 and durable central persistence remain open.
+
+### Runtime remediation evidence (Node 22.23.4)
+
+A clean `npm ci --ignore-scripts` and build passed. The normal regression batch
+passed all 46 Node tests and 40 of 41 acceptance scenarios. Its new installed-root
+assertion exposed unresolved TypeScript logger aliases in the packaged root
+export. Three internal imports were changed to relative paths; no export or
+behavior was removed. The affected installed-tarball scenario then passed all
+three steps, including root data generation, real adapter execution and worker
+tamper rejection. Unaffected browser suites were not repeated.
+
+The final build, source/test formatting, changed-file formatting and whitespace
+checks passed. Both the source production-only audit and the independently
+installed production consumer reported zero advisories. The clean development
+install still reported 12 tooling advisories (11 high, one moderate); wider
+lint/tooling remediation remains deferred to RRDPLAT-28.
+
+The successful consumer tarball SHA-256 was
+`ca57d7b7c93ee0a23a3288bd3011335a1db41a8027242f79ee489f2096d8fa45`.
+This evidence paragraph was added afterward, so that digest identifies the
+tested package, not a future documentation-inclusive tarball. Validation logs
+are `/tmp/web17-final-*.log`, `/tmp/web17-root-*.log` and
+`/tmp/web17-final-audit.json`. The original failed scenario remains recorded in
+the aggregate log. No hosted workflows or Copilot tasks were run for this repair.

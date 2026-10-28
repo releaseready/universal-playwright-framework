@@ -35,9 +35,20 @@ async function main(): Promise<void> {
       ),
     );
   }
+  const framework = requireFromConsumer("@universal/playwright-framework") as {
+    executeAdapter: typeof executeAdapter;
+    TestDataFactory: {
+      generateUser: typeof import("../fixtures/test-data-factory").TestDataFactory.generateUser;
+    };
+  };
+  const user = framework.TestDataFactory.generateUser("band");
+  assert.equal(user.userType, "band");
+  assert.ok(user.bandMembers && user.bandMembers.length > 0);
+  assert.ok(user.firstName && user.lastName && user.email);
   const adapter = requireFromConsumer(
     "@universal/playwright-framework/adapter/v1",
   ) as { executeAdapter: typeof executeAdapter };
+  assert.equal(framework.executeAdapter, adapter.executeAdapter);
   const { request, context } = examples();
   const rejected = await adapter.executeAdapter(rejectedExample, context);
   assert.equal(rejected.accepted, false);
