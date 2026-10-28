@@ -115,12 +115,29 @@ stderr and exits nonzero, never a successful receipt:
 Failure stages are allowlisted: `input-validation` (including reference-file
 reading/parsing and secure input collection), `browser-startup` (launch,
 context/page acquisition), `navigation` (destination guard, initial navigation
-and URL assertion), `submission-assertion` (form, single submit and remaining
-assertions), `cleanup` (assertions completed but shutdown unconfirmed),
+and URL assertion), `submission-assertion` (shared consumer fallback),
+`form-visible`, `username-fill`, `password-fill`, `submit-click`,
+`overlay-dismissal`, `final-url`, `brand-visible`, `brand-text`,
+`request-policy` (the individual Partay operation that did not complete),
+`cleanup` (assertions completed but shutdown unconfirmed),
 `input-disposal` (runtime provider disposal failed), or `unclassified` (unknown
 diagnostic metadata). No exception text, cause, request contents, paths or
 arbitrary supplied strings are included. `partayLoginFailureReport` reconstructs
 only allowlisted values and returns no account/scope data.
+
+The stage is set immediately before each operation; it is not a diagnosis of
+credential rejection or proof the server received a submission. A `submit-click`
+failure can occur before or after a click was dispatched. An `overlay-dismissal`
+failure means dismissal was not verified, not necessarily that authentication
+failed. Request-policy failure can include blocked redirects, off-origin traffic
+or transport errors; no destinations or response bodies are reported.
+
+The operator-reported attempt on revision `59664fe` returned
+`submission-assertion` / `confirmed` with no automatic retry. Its login remains
+not verified; the broad historical stage cannot be retrospectively narrowed.
+The earlier attempt's login and cleanup remain unknown. Added offline operation
+checkpoints do not authorize a new live attempt or reuse of either consumed
+request.
 
 Cleanup is a **separate dimension**, not the failure stage:
 

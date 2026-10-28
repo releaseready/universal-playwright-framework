@@ -79,7 +79,7 @@ export async function guardLoginRequests(
 export async function withFreshLoginPage(
   consume: (
     page: Page,
-    setStage: (stage: "navigation" | "submission-assertion") => void,
+    setStage: (stage: RuntimeLoginFailureStage) => void,
   ) => Promise<void>,
   options: RuntimeLoginBrowserOptions = {},
 ): Promise<void> {
@@ -160,8 +160,7 @@ export async function withFreshLoginPage(
     page.setDefaultNavigationTimeout(Math.max(1, deadline - Date.now()));
     stage = "submission-assertion";
     await consume(page, (next) => {
-      if (next === "navigation" || next === "submission-assertion")
-        stage = next;
+      stage = new RuntimeLoginFailure(next, "unconfirmed").failureStage;
     });
     checkActive();
   };

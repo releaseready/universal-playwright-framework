@@ -107,17 +107,25 @@ function loginConsumer(
         );
         await page.goto(PARTAY_LOGIN_URL);
         await expect(page).toHaveURL(PARTAY_LOGIN_URL);
-        setStage("submission-assertion");
+        setStage("form-visible");
         const overlay = page.locator("#overlay");
         await expect(overlay).toBeVisible();
+        setStage("username-fill");
         await overlay.locator("#username").fill(account.username);
+        setStage("password-fill");
         await overlay.locator("#password").fill(account.password);
+        setStage("submit-click");
         await overlay.locator("#authGo").click();
+        setStage("overlay-dismissal");
         await expect(overlay).toBeHidden();
+        setStage("final-url");
         await expect(page).toHaveURL(PARTAY_LOGIN_URL);
         const logo = page.locator("#brandLogo");
+        setStage("brand-visible");
         await expect(logo).toBeVisible();
+        setStage("brand-text");
         expect(await logo.innerText()).toBe("Partay");
+        setStage("request-policy");
         assertRequestsAllowed();
       },
       {

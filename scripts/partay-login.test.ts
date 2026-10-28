@@ -114,6 +114,10 @@ type Mode =
   | "hidden-logo"
   | "redirect"
   | "missing-form"
+  | "missing-username"
+  | "missing-password"
+  | "disabled-submit"
+  | "blocked-request"
   | "waiting";
 
 function ownedBrowser(mode: Mode, afterSubmit?: () => void) {
@@ -171,8 +175,8 @@ function ownedBrowser(mode: Mode, afterSubmit?: () => void) {
           response.end(`<!doctype html>
               <div id="brandLogo" ${mode === "hidden-logo" ? 'style="display:none"' : ""}>${mode === "wrong-logo" ? "Not Partay" : "Par<b>tay</b>"}</div>
               <div id="overlay" ${mode === "missing-form" ? 'style="display:none"' : ""}>
-                <input id="username"><input id="password" type="password">
-                <button id="authGo">Sign in</button>
+                <input id="${mode === "missing-username" ? "other-user" : "username"}"><input id="${mode === "missing-password" ? "other-password" : "password"}" type="password">
+                <button id="authGo" ${mode === "disabled-submit" ? "disabled" : ""}>Sign in</button>
               </div>
               <script>
                 authGo.onclick = async () => {
@@ -182,6 +186,9 @@ function ownedBrowser(mode: Mode, afterSubmit?: () => void) {
                       password.value !== ${JSON.stringify(canary.password)}) return;
                   if (${JSON.stringify(mode)} === "waiting" || ${JSON.stringify(mode)} === "rejected") return;
                   if (${JSON.stringify(mode)} === "redirect") { location.href = "/not-permitted"; return; }
+                  if (${JSON.stringify(mode)} === "blocked-request") {
+                    try { await fetch("https://blocked.invalid/", {method:"POST"}); } catch {}
+                  }
                   overlay.style.display = "none";
                   if (${JSON.stringify(mode)} === "wrong-url") history.pushState({}, "", "/other");
                 };
@@ -480,6 +487,10 @@ for (const mode of [
   "hidden-logo",
   "redirect",
   "missing-form",
+  "missing-username",
+  "missing-password",
+  "disabled-submit",
+  "blocked-request",
 ] as const) {
   test(`owned ${mode} cannot pass; no retry, secret-bearing error or retained context`, async () => {
     const { descriptor, request, provider } = fixture();
@@ -492,7 +503,19 @@ for (const mode of [
       (error) => {
         assertSafe(error);
         assert.ok(error instanceof RuntimeLoginFailure);
-        assert.equal(error.failureStage, "submission-assertion");
+        const stages = {
+          rejected: "overlay-dismissal",
+          "wrong-url": "final-url",
+          "wrong-logo": "brand-text",
+          "hidden-logo": "brand-visible",
+          redirect: "final-url",
+          "missing-form": "form-visible",
+          "missing-username": "username-fill",
+          "missing-password": "password-fill",
+          "disabled-submit": "submit-click",
+          "blocked-request": "request-policy",
+        };
+        assert.equal(error.failureStage, stages[mode]);
         // Deadline cancellation closes both resources independently; a close
         // rejection must not be upgraded merely because the process exited.
         if (mode === "wrong-logo")
@@ -501,7 +524,17 @@ for (const mode of [
         return true;
       },
     );
-    assert.equal(owned.submissions, mode === "missing-form" ? 0 : 1);
+    assert.equal(
+      owned.submissions,
+      [
+        "missing-form",
+        "missing-username",
+        "missing-password",
+        "disabled-submit",
+      ].includes(mode)
+        ? 0
+        : 1,
+    );
     assert.equal(owned.contextClosed, true);
     assert.equal(owned.browserClosed, true);
     assert.deepEqual(owned.requests, [PARTAY_LOGIN_URL]);
@@ -521,7 +554,9 @@ test("cancellation during login closes browser and disposes provider", async () 
     (error) => {
       assertSafe(error);
       assert.ok(error instanceof RuntimeLoginFailure);
-      assert.equal(error.failureStage, "submission-assertion");
+      assert.ok(
+        ["submit-click", "overlay-dismissal"].includes(error.failureStage),
+      );
       assert.notEqual(error.cleanupStatus, "not-acquired");
       return true;
     },
@@ -895,7 +930,13 @@ for (const fault of ["context", "browser", "both"]) {
           (error) =>
             assertFailure(
               error,
-              outcome === "success" ? "cleanup" : "submission-assertion",
+              outcome === "success"
+                ? "cleanup"
+                : outcome === "failure"
+                  ? "brand-text"
+                  : outcome === "cancel"
+                    ? "submit-click"
+                    : "overlay-dismissal",
               "unconfirmed",
             ),
         );
