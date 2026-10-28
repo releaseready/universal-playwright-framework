@@ -146,29 +146,7 @@ test("CLI rejects private-account-file mode before reading references or dispatc
     await writeFile(file, contents, { mode: 0o600 });
     const result = spawnSync(
       process.execPath,
-      [
-        "-e",
-        `
-          const fs = require("node:fs");
-          const partay = require(${JSON.stringify(join(__dirname, "../src/customer-login/partay.js"))});
-          const script = ${JSON.stringify(join(__dirname, "verify-partay-login.js"))};
-          const protectedPaths = new Set(["descriptor", "request", ${JSON.stringify(file)}]);
-          const originalReadFileSync = fs.readFileSync;
-          let referenceReads = 0;
-          fs.readFileSync = (path, ...args) => {
-            if (protectedPaths.has(String(path))) referenceReads += 1;
-            if (path === "descriptor" || path === "request") return "{}";
-            return originalReadFileSync(path, ...args);
-          };
-          let promptCalls = 0;
-          let fileCalls = 0;
-          partay.promptAndVerifyPartayLogin = async () => { promptCalls += 1; };
-          partay.privateFileAndVerifyPartayLogin = async () => { fileCalls += 1; };
-          process.argv = [process.execPath, "owned-cli", "descriptor", "request", "--private-account-file", ${JSON.stringify(file)}];
-          require(script);
-          process.stdout.write(JSON.stringify({ referenceReads, promptCalls, fileCalls }));
-        `,
-      ],
+      [join(__dirname, "fixtures/private-file-cli.js"), file],
       { encoding: "utf8" },
     );
     assert.equal(result.status, 1);
