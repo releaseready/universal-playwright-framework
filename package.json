@@ -12,6 +12,10 @@
     "./adapter/v1": {
       "types": "./dist/cucumber/src/adapter/v1.d.ts",
       "default": "./dist/cucumber/src/adapter/v1.js"
+    },
+    "./data-references/v1": {
+      "types": "./dist/cucumber/src/input-preparation/data-references.d.ts",
+      "default": "./dist/cucumber/src/input-preparation/data-references.js"
     }
   },
   "scripts": {
@@ -94,7 +98,8 @@
     "tsconfig.json",
     "tsconfig.cucumber.json",
     "docs/local-adapter-contract.md",
-    "README.md"
+    "README.md",
+    "docs/input-preparation-contract.md"
   ],
   "publishConfig": {
     "access": "public"

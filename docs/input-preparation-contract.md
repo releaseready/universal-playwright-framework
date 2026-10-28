@@ -103,3 +103,22 @@ preparation API directly. This does not complete RRDSCRUM-70 or all RRDWEB-3 run
 
 Owned synthetic coverage is in `features/data-references.feature` and
 `scripts/data-references.test.ts`, included in `npm run test:input-preparation`.
+
+### Public package import
+
+Consumers use the explicit versioned export, including its TypeScript declarations:
+
+```typescript
+import {
+  reviewDataReferences,
+  verifyDataReferenceBinding,
+  type DataReferenceSelection,
+  type ApprovedDataCatalogue,
+} from "@universal/playwright-framework/data-references/v1";
+```
+
+Do not import internal `dist` paths: the package exports map intentionally limits
+public entry points. This entry forwards directly to the reference contract above;
+it does not execute scenarios or grant approval. The installed-package regression
+checks this import, distinct rows, safe rejection, and stale bindings outside the
+checkout alongside the existing owned synthetic adapter pilot.
