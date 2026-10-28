@@ -277,7 +277,7 @@ export class InMemoryRuntimeSecretProvider implements RuntimeSecretProvider {
   #account: RuntimeLoginAccount | undefined;
   #expiry?: NodeJS.Timeout;
 
-  constructor(request: RuntimeLoginRequest, account: RuntimeLoginAccount) {
+  constructor(request: RuntimeLoginRequest, account: unknown) {
     this.#request = validateRequest(request);
     this.#account = validateAccount(account);
     this.#expiry = setTimeout(

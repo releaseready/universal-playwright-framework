@@ -12,6 +12,7 @@ import {
   type RuntimeLoginResult,
 } from "../input-preparation/runtime-login";
 import { withOperatorLoginInputs } from "../input-preparation/operator-prompt";
+import { withPrivateFileLoginInputs } from "../input-preparation/private-login-file";
 import {
   withFreshLoginPage,
   guardLoginRequests,
@@ -48,6 +49,25 @@ export async function promptAndVerifyPartayLogin(
       request,
       loginConsumer(descriptor, request, options),
       { signal: options.signal },
+    );
+  });
+}
+
+export async function privateFileAndVerifyPartayLogin(
+  descriptor: PreparedInputDescriptor,
+  request: RuntimeLoginRequest,
+  filePath: string,
+  repositoryRoot: string,
+  options: RuntimeLoginBrowserOptions = {},
+): Promise<RuntimeLoginResult> {
+  return withSafeFailure(() => {
+    validateTarget(descriptor, request);
+    return withPrivateFileLoginInputs(
+      descriptor,
+      request,
+      filePath,
+      repositoryRoot,
+      loginConsumer(descriptor, request, options),
     );
   });
 }

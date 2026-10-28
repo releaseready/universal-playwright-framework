@@ -27,22 +27,170 @@ import {
   RUNTIME_LOGIN_POLICY_REASONS,
   consumeRuntimeLoginInputs,
   type RuntimeLoginRequest,
+  type RuntimeLoginAccount,
 } from "../src/input-preparation/runtime-login";
 import {
   PARTAY_LOGIN_URL,
   verifyPartayLogin,
   partayLoginFailureReport,
+  privateFileAndVerifyPartayLogin,
 } from "../src/customer-login/partay";
 import {
   guardLoginRequests,
   LOGIN_CLEANUP_TIMEOUT_MS,
   withFreshLoginPage,
 } from "../src/execution/runtime-login-browser";
+import {
+  mkdtemp,
+  writeFile,
+  chmod,
+  access,
+  rm,
+  symlink,
+  link,
+  mkdir,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { withPrivateFileLoginInputs } from "../src/input-preparation/private-login-file";
 
 const canary = {
   username: "OWNED_WEB8_USERNAME_CANARY",
   password: "OWNED_WEB8_PASSWORD_CANARY",
 };
+
+for (const outcome of ["success", "rejected", "cancelled"] as const) {
+  test(`owned private-file ${outcome} removes disk input before browser acquisition`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), "owned-private-browser-"));
+    const file = join(directory, "account.json");
+    const root = join(directory, "repository");
+    const { descriptor, request, provider } = fixture();
+    provider.dispose();
+    const controller = new AbortController();
+    const owned = ownedBrowser(
+      outcome === "success" ? "success" : "waiting",
+      outcome === "cancelled" ? () => controller.abort() : undefined,
+    );
+    try {
+      await chmod(directory, 0o700);
+      await mkdir(root, { mode: 0o700 });
+      await writeFile(file, JSON.stringify(canary), { mode: 0o600 });
+      const run = privateFileAndVerifyPartayLogin(
+        descriptor,
+        request,
+        file,
+        root,
+        {
+          signal: controller.signal,
+          timeoutMs: 2000,
+          launchBrowser: async (timeout) => {
+            await assert.rejects(access(file), { code: "ENOENT" });
+            return owned.launchBrowser(timeout);
+          },
+        },
+      );
+      if (outcome === "success") assert.equal((await run).status, "completed");
+      else await assert.rejects(run, assertSafe);
+      await assert.rejects(access(file), { code: "ENOENT" });
+      assert.equal(owned.submissions, 1);
+      assert.equal(owned.contextClosed, true);
+      assert.equal(owned.browserClosed, true);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
+
+for (const outcome of [
+  "success",
+  "consumer-failure",
+  "invalid-json",
+  "extra-field",
+  "permissions",
+  "directory-permissions",
+  "symlink",
+  "hardlink",
+  "oversized",
+  "inside-repository",
+] as const) {
+  test(`private file ${outcome}: safe one-shot owned input and explicit file lifetime`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), "owned-private-login-"));
+    const file = join(directory, "account.json");
+    const root = join(directory, "repository");
+    const { descriptor, request, provider } = fixture();
+    provider.dispose();
+    let consumed = 0;
+    let retained: RuntimeLoginAccount | undefined;
+    try {
+      await chmod(directory, 0o700);
+      await mkdir(root, { mode: 0o700 });
+      await writeFile(
+        file,
+        outcome === "invalid-json"
+          ? canary.password
+          : outcome === "oversized"
+            ? "x".repeat(8193)
+            : JSON.stringify(
+                outcome === "extra-field"
+                  ? { ...canary, extra: canary.password }
+                  : canary,
+              ),
+        { mode: 0o600 },
+      );
+      if (outcome === "permissions") await chmod(file, 0o644);
+      if (outcome === "directory-permissions") await chmod(directory, 0o755);
+      let candidate = file;
+      if (outcome === "symlink") {
+        candidate = join(directory, "alias");
+        await symlink(file, candidate);
+      }
+      if (outcome === "hardlink") await link(file, join(directory, "alias"));
+      const run = () =>
+        withPrivateFileLoginInputs(
+          descriptor,
+          request,
+          candidate,
+          outcome === "inside-repository" ? directory : root,
+          async (account) => {
+            consumed += 1;
+            retained = account;
+            await assert.rejects(access(file), { code: "ENOENT" });
+            assert.equal(account.username, canary.username);
+            assert.equal(account.password, canary.password);
+            if (outcome === "consumer-failure")
+              throw new Error(canary.password);
+          },
+        );
+      if (outcome === "success") {
+        assert.equal((await run()).status, "completed");
+      } else {
+        await assert.rejects(run(), assertSafe);
+      }
+      assert.equal(
+        consumed,
+        ["success", "consumer-failure"].includes(outcome) ? 1 : 0,
+      );
+      if (retained) assert.throws(() => retained?.password);
+      const removed = [
+        "success",
+        "consumer-failure",
+        "invalid-json",
+        "extra-field",
+      ].includes(outcome);
+      if (removed) {
+        await assert.rejects(access(file), { code: "ENOENT" });
+        await assert.rejects(run(), assertSafe);
+        assert.equal(
+          consumed,
+          ["success", "consumer-failure"].includes(outcome) ? 1 : 0,
+        );
+      } else {
+        await access(file);
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
 
 function fixture() {
   const references = reviewDataReferences(
