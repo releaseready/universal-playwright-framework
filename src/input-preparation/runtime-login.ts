@@ -128,16 +128,43 @@ export const RUNTIME_LOGIN_POLICY_REASONS = Object.freeze([
 export type RuntimeLoginPolicyReason =
   (typeof RUNTIME_LOGIN_POLICY_REASONS)[number];
 
+/** Only explicit completed comparisons can produce assertion-failed evidence.
+ * This is trusted in-process evidence, not authentication or a product-bug verdict.
+ */
+export const RUNTIME_LOGIN_FAILURE_CLASSIFICATIONS = Object.freeze([
+  "assertion-failed",
+  "input",
+  "navigation",
+  "request-policy",
+  "interrupted",
+  "timed-out",
+  "operational",
+  "unknown",
+] as const);
+export type RuntimeLoginFailureClassification =
+  (typeof RUNTIME_LOGIN_FAILURE_CLASSIFICATIONS)[number];
+
+export interface RuntimeLoginFailureReport {
+  readonly status: "not-verified";
+  readonly failureStage: RuntimeLoginFailureStage;
+  readonly failureClassification: RuntimeLoginFailureClassification;
+  readonly cleanupStatus: RuntimeLoginCleanupStatus;
+  readonly policyReason?: RuntimeLoginPolicyReason;
+  readonly automaticRetryAttempted: false;
+}
+
 /** Reconstruct only allowlisted metadata; never retain an exception or cause. */
 export class RuntimeLoginFailure extends RuntimeLoginError {
   readonly failureStage: RuntimeLoginFailureStage;
   readonly cleanupStatus: RuntimeLoginCleanupStatus;
   readonly policyReason?: RuntimeLoginPolicyReason;
+  readonly failureClassification: RuntimeLoginFailureClassification;
 
   constructor(
     failureStage: unknown,
     cleanupStatus: unknown,
     policyReason?: unknown,
+    failureClassification?: unknown,
   ) {
     super("runtime-login-failed");
     this.failureStage =
@@ -150,6 +177,16 @@ export class RuntimeLoginFailure extends RuntimeLoginError {
     this.policyReason = RUNTIME_LOGIN_POLICY_REASONS.find(
       (reason) => reason === policyReason,
     );
+    const classification =
+      RUNTIME_LOGIN_FAILURE_CLASSIFICATIONS.find(
+        (value) => value === failureClassification,
+      ) ?? "unknown";
+    this.failureClassification = this.policyReason
+      ? "request-policy"
+      : classification === "assertion-failed" &&
+          this.failureStage !== "brand-text"
+        ? "unknown"
+        : classification;
   }
 
   static fromUnknown(error: unknown): RuntimeLoginFailure | undefined {
@@ -162,6 +199,7 @@ export class RuntimeLoginFailure extends RuntimeLoginError {
         value("failureStage"),
         value("cleanupStatus"),
         value("policyReason"),
+        value("failureClassification"),
       );
     } catch {
       return undefined;
@@ -411,10 +449,21 @@ export async function consumeRuntimeLoginInputs(
     try {
       provider.dispose?.();
     } catch {
-      throw (
-        consumerFailure ??
-        new RuntimeLoginFailure("input-disposal", "unconfirmed")
-      );
+      throw consumerFailure
+        ? new RuntimeLoginFailure(
+            consumerFailure.failureStage,
+            consumerFailure.cleanupStatus,
+            consumerFailure.policyReason,
+            consumerFailure.failureClassification === "assertion-failed"
+              ? "operational"
+              : consumerFailure.failureClassification,
+          )
+        : new RuntimeLoginFailure(
+            "input-disposal",
+            "unconfirmed",
+            undefined,
+            "operational",
+          );
     }
   }
 }

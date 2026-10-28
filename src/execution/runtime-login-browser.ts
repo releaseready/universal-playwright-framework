@@ -1,5 +1,6 @@
 import {
   chromium,
+  errors,
   type Browser,
   type BrowserContext,
   type Page,
@@ -9,6 +10,7 @@ import {
   type RuntimeLoginFailureStage,
   type RuntimeLoginCleanupStatus,
   type RuntimeLoginPolicyReason,
+  type RuntimeLoginFailureClassification,
 } from "../input-preparation/runtime-login";
 
 export interface RuntimeLoginBrowserOptions {
@@ -19,6 +21,9 @@ export interface RuntimeLoginBrowserOptions {
 }
 
 export const LOGIN_CLEANUP_TIMEOUT_MS = 1_000;
+
+// Check the registered guard after work AND cleanup, including failed assertions.
+const requestPolicyChecks = new WeakMap<BrowserContext, () => void>();
 
 /** Transport guard: never let the browser automatically follow an HTTP redirect. */
 export async function guardLoginRequests(
@@ -36,14 +41,30 @@ export async function guardLoginRequests(
     throw new Error("Invalid login destination policy");
   }
   let policyReason: RuntimeLoginPolicyReason | undefined;
+  let pendingRequests = 0;
   const record = (reason: RuntimeLoginPolicyReason): void => {
     policyReason ??= reason;
   };
+  const assertRequestsAllowed = (): void => {
+    if (policyReason)
+      throw new RuntimeLoginFailure(
+        "request-policy",
+        "unconfirmed",
+        policyReason,
+        "request-policy",
+      );
+  };
+  requestPolicyChecks.set(context, () => {
+    // Unsettled transport cannot establish a policy-clean assertion outcome.
+    if (pendingRequests > 0) record("transport-error");
+    assertRequestsAllowed();
+  });
   await context.routeWebSocket("**/*", (socket) => {
     record("websocket");
     socket.close();
   });
   await context.route("**/*", async (route) => {
+    pendingRequests += 1;
     try {
       const request = route.request();
       const url = new URL(request.url());
@@ -73,16 +94,11 @@ export async function guardLoginRequests(
     } catch {
       record("transport-error");
       await route.abort("blockedbyclient").catch(() => undefined);
+    } finally {
+      pendingRequests -= 1;
     }
   });
-  return () => {
-    if (policyReason)
-      throw new RuntimeLoginFailure(
-        "request-policy",
-        "unconfirmed",
-        policyReason,
-      );
-  };
+  return assertRequestsAllowed;
 }
 
 export async function withFreshLoginPage(
@@ -94,7 +110,12 @@ export async function withFreshLoginPage(
 ): Promise<void> {
   const timeoutMs = options.timeoutMs ?? 30_000;
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000) {
-    throw new RuntimeLoginFailure("input-validation", "not-acquired");
+    throw new RuntimeLoginFailure(
+      "input-validation",
+      "not-acquired",
+      undefined,
+      "input",
+    );
   }
   const controller = new AbortController();
   const closures = new Map<Browser | BrowserContext, Promise<boolean>>();
@@ -118,13 +139,17 @@ export async function withFreshLoginPage(
   let stage: RuntimeLoginFailureStage = "browser-startup";
   let failureStage: RuntimeLoginFailureStage | undefined;
   let policyReason: RuntimeLoginPolicyReason | undefined;
+  let failureClassification: RuntimeLoginFailureClassification = "operational";
+  let interruption: "interrupted" | "timed-out" | undefined;
   let cleanupStatus: RuntimeLoginCleanupStatus = "unconfirmed";
-  const abort = (): void => {
+  const interrupt = (reason: "interrupted" | "timed-out"): void => {
+    interruption ??= reason;
     controller.abort();
     close(context);
     close(browser);
   };
-  const timer = setTimeout(abort, timeoutMs);
+  const abort = (): void => interrupt("interrupted");
+  const timer = setTimeout(() => interrupt("timed-out"), timeoutMs);
   options.signal?.addEventListener("abort", abort, { once: true });
   if (options.signal?.aborted) abort();
   const deadline = Date.now() + timeoutMs;
@@ -177,8 +202,18 @@ export async function withFreshLoginPage(
   try {
     await Promise.race([work(), interrupted]);
   } catch (error) {
-    failureStage = stage;
-    policyReason = RuntimeLoginFailure.fromUnknown(error)?.policyReason;
+    failureStage = new RuntimeLoginFailure(stage, "unconfirmed").failureStage;
+    const safe = RuntimeLoginFailure.fromUnknown(error);
+    policyReason = safe?.policyReason;
+    failureClassification =
+      interruption ??
+      (Date.now() >= deadline || error instanceof errors.TimeoutError
+        ? "timed-out"
+        : safe && safe.failureClassification !== "unknown"
+          ? safe.failureClassification
+          : failureStage === "navigation"
+            ? "navigation"
+            : "operational");
     acquisitionInterrupted = pendingAcquisition;
   } finally {
     clearTimeout(timer);
@@ -221,11 +256,34 @@ export async function withFreshLoginPage(
       clearTimeout(cleanupTimer);
     }
   }
+  // Cleanup has its own bounded budget. The work timer/listener are already
+  // detached, so recheck both before publishing evidence or a success receipt.
+  const finalInterruption =
+    interruption ??
+    (options.signal?.aborted
+      ? "interrupted"
+      : Date.now() >= deadline
+        ? "timed-out"
+        : undefined);
+  if (finalInterruption) {
+    failureStage ??= stage;
+    failureClassification = finalInterruption;
+  }
+  // A blocked request can explain a broken page. It always outranks assertion
+  // evidence, even when work threw before its normal policy check.
+  try {
+    if (context) requestPolicyChecks.get(context)?.();
+  } catch (error) {
+    failureStage = "request-policy";
+    policyReason = RuntimeLoginFailure.fromUnknown(error)?.policyReason;
+    failureClassification = "request-policy";
+  }
   if (failureStage || cleanupStatus === "unconfirmed") {
     throw new RuntimeLoginFailure(
       failureStage ?? "cleanup",
       cleanupStatus,
       policyReason,
+      failureClassification,
     );
   }
 }
