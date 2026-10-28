@@ -44,6 +44,7 @@ export {
   RuntimeLoginFailure,
   RUNTIME_LOGIN_FAILURE_STAGES,
   RUNTIME_LOGIN_CLEANUP_STATUSES,
+  RUNTIME_LOGIN_POLICY_REASONS,
   validateRuntimeLoginRequest,
 } from "./input-preparation/runtime-login";
 export { withOperatorLoginInputs } from "./input-preparation/operator-prompt";
@@ -52,6 +53,7 @@ export type {
   RuntimeLoginErrorCode,
   RuntimeLoginFailureStage,
   RuntimeLoginCleanupStatus,
+  RuntimeLoginPolicyReason,
   RuntimeLoginRequest,
   RuntimeLoginResult,
 } from "./input-preparation/runtime-login";

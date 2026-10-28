@@ -58,21 +58,22 @@ async function withSafeFailure(
   try {
     return await run();
   } catch (error) {
-    throw error instanceof RuntimeLoginFailure
-      ? new RuntimeLoginFailure(error.failureStage, error.cleanupStatus)
-      : new RuntimeLoginFailure("input-validation", "not-acquired");
+    throw (
+      RuntimeLoginFailure.fromUnknown(error) ??
+      new RuntimeLoginFailure("input-validation", "not-acquired")
+    );
   }
 }
 
 export function partayLoginFailureReport(error: unknown) {
   const safe =
-    error instanceof RuntimeLoginFailure
-      ? new RuntimeLoginFailure(error.failureStage, error.cleanupStatus)
-      : new RuntimeLoginFailure("unclassified", "unconfirmed");
+    RuntimeLoginFailure.fromUnknown(error) ??
+    new RuntimeLoginFailure("unclassified", "unconfirmed");
   return {
     status: "not-verified" as const,
     failureStage: safe.failureStage,
     cleanupStatus: safe.cleanupStatus,
+    ...(safe.policyReason ? { policyReason: safe.policyReason } : {}),
     automaticRetryAttempted: false as const,
   };
 }
