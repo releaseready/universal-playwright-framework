@@ -2,10 +2,20 @@
   "name": "@universal/playwright-framework",
   "version": "1.0.0",
   "description": "Universal, plug-and-play Playwright E2E testing framework for any web application",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/cucumber/src/index.js",
+  "types": "dist/cucumber/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/cucumber/src/index.d.ts",
+      "default": "./dist/cucumber/src/index.js"
+    },
+    "./adapter/v1": {
+      "types": "./dist/cucumber/src/adapter/v1.d.ts",
+      "default": "./dist/cucumber/src/adapter/v1.js"
+    }
+  },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --outDir dist/cucumber && npm run build:cucumber",
     "test": "playwright test",
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",
@@ -21,8 +31,10 @@
     "test:features": "npm run build:cucumber && cucumber-js --config cucumber.json",
     "test:execution": "npm run build:cucumber && node --test dist/cucumber/scripts/execution-adapter.test.js && cucumber-js --config cucumber-retry-regression.json",
     "test:reporting": "npm run build:cucumber && node --test dist/cucumber/scripts/reporting.test.js && cucumber-js --config cucumber-reporting.json",
+    "test:adapter": "npm run build:cucumber && node --test dist/cucumber/scripts/adapter-contract.test.js && cucumber-js --config cucumber-adapter.json",
+    "review:revision": "npm run build && node dist/cucumber/scripts/reviewed-revision.js",
     "execute:synthetic": "npm run build:cucumber && node dist/cucumber/src/execution/cli.js",
-    "test:features:regression": "npm run test:input-preparation && npm run test:validation && npm run test:features && npm run test:execution && node --test dist/cucumber/scripts/cucumber-timeouts.test.js && npm run test:reporting",
+    "test:features:regression": "npm run test:input-preparation && npm run test:validation && npm run test:features && npm run test:execution && node --test dist/cucumber/scripts/cucumber-timeouts.test.js && npm run test:reporting && npm run test:adapter",
     "report": "playwright show-report",
     "report:allure": "allure serve allure-results",
     "clean": "rimraf dist reports screenshots test-results",
@@ -52,10 +64,6 @@
     "url": "https://github.com/universal-testing/playwright-framework.git"
   },
   "devDependencies": {
-    "@cucumber/cucumber": "^11.3.0",
-    "@cucumber/cucumber-expressions": "18.0.1",
-    "@cucumber/gherkin": "30.0.4",
-    "@playwright/test": "^1.40.0",
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
@@ -68,20 +76,30 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@cucumber/cucumber": "12.9.0",
+    "@cucumber/cucumber-expressions": "19.0.0",
+    "@cucumber/gherkin": "38.0.0",
+    "@playwright/test": "1.55.1",
     "dotenv": "^16.3.0",
-    "faker": "^6.6.6",
     "zod": "4.6.7"
   },
   "files": [
-    "dist",
+    "dist/cucumber",
     "config",
     "src",
+    "fixtures",
+    "features/execution",
+    "features/support/step-timeout.ts",
+    "cucumber-execution.json",
+    "tsconfig.json",
+    "tsconfig.cucumber.json",
+    "docs/local-adapter-contract.md",
     "README.md"
   ],
   "publishConfig": {
     "access": "public"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "^22.12.0 || >=24.0.0"
   }
 }

@@ -3,7 +3,7 @@
  */
 
 import { APIRequestContext, request } from "@playwright/test";
-import { Logger } from "@utils/logger";
+import { Logger } from "../utils/logger";
 
 export interface ApiResponse<T = any> {
   status: number;
