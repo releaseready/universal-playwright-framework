@@ -1,7 +1,13 @@
 {
   "default": {
-    "paths": ["features/input-preparation.feature"],
-    "require": ["dist/cucumber/features/input-preparation/steps.js"],
+    "paths": [
+      "features/input-preparation.feature",
+      "features/data-references.feature"
+    ],
+    "require": [
+      "dist/cucumber/features/input-preparation/steps.js",
+      "dist/cucumber/features/input-preparation/data-reference.steps.js"
+    ],
     "format": ["progress"]
   }
 }
