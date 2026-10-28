@@ -13,6 +13,7 @@ import {
 import { withOperatorLoginInputs } from "../input-preparation/operator-prompt";
 import {
   withFreshLoginPage,
+  guardLoginRequests,
   type RuntimeLoginBrowserOptions,
 } from "../execution/runtime-login-browser";
 
@@ -68,19 +69,11 @@ function loginConsumer(
     validateTarget(descriptor, request);
     await withFreshLoginPage(
       async (page) => {
-        let blockedNavigation = false;
-        await page.context().route("**/*", async (route) => {
-          const navigation = route.request();
-          if (
-            navigation.isNavigationRequest() &&
-            navigation.url() !== PARTAY_LOGIN_URL
-          ) {
-            blockedNavigation = true;
-            await route.abort("blockedbyclient");
-            return;
-          }
-          await route.fallback();
-        });
+        const assertRequestsAllowed = await guardLoginRequests(
+          page.context(),
+          request.scope.environment.approvedOrigin,
+          PARTAY_LOGIN_URL,
+        );
         await page.goto(PARTAY_LOGIN_URL);
         await expect(page).toHaveURL(PARTAY_LOGIN_URL);
         const overlay = page.locator("#overlay");
@@ -93,9 +86,7 @@ function loginConsumer(
         const logo = page.locator("#brandLogo");
         await expect(logo).toBeVisible();
         expect(await logo.innerText()).toBe("Partay");
-        if (blockedNavigation) {
-          throw new Error("Login attempted an unapproved document destination");
-        }
+        assertRequestsAllowed();
       },
       {
         ...options,
