@@ -15,7 +15,15 @@ run actually passes. Synthetic fixture results are not customer-login evidence.
   on their own.
 - Do not visit another workflow or modify customer data. Other
   document destinations, including redirects and popup destinations, are blocked.
-  An observed blocked document navigation fails the run.
+  Every routed HTTP(S) request (including fetch, form, iframe and assets) must
+  use the approved origin; document requests must use the exact login URL.
+  The shared transport uses `route.fetch({ maxRedirects: 0 })` and only fulfills
+  non-30x responses. **All HTTP 30x responses are rejected**, even same-origin
+  redirects: Chromium never receives a redirect to follow outside interception.
+  Redirect chains therefore stop at the first response, before the next hop.
+  WebSockets are blocked, and service workers are disabled. An observed blocked
+  request or transport failure fails the run. This deliberately fails closed;
+  a site requiring redirects needs a separately reviewed policy, not a bypass.
 
 Site-specific actions are in [partay.ts](../src/customer-login/partay.ts).
 Shared resource lifetime is in
@@ -40,12 +48,25 @@ existing boundary. The callback validates the exact target before navigation.
 The result contains only scope/account references, not credentials.
 
 A fresh non-persistent Chromium browser/context is acquired for each call and
-closed in `finally`. Cancellation and the overall timeout close the browser to
-interrupt pending Playwright operations. Late browser/context acquisition is
-also closed. The deadline is bounded by the request expiry (default 30 seconds,
-at most 120 seconds). Cleanup errors fail the run rather than producing a
-success receipt. The trusted launcher seam exists for owned tests; it must not
-be supplied from job JSON or used to enable recording/session reuse.
+closed in `finally`. The operation races cancellation/the overall deadline, so
+even a never-settling browser operation cannot retain the provider indefinitely.
+Cancellation requests both context and browser closure independently. Final
+cleanup allows at most **1,000 ms total** (two 500 ms stages): context closure
+gets a head start, but cannot prevent the browser-close attempt. Neither close
+promise must settle for the consumer to return a fixed safe failure and allow
+provider disposal. Late acquisition also requests closure; late rejections are
+handled, not emitted as unhandled promise rejections. The operation deadline is
+bounded by the request expiry (default 30 seconds, at most 120 seconds), plus
+the cleanup budget (subject to normal event-loop scheduling).
+
+Success requires both acquired resources' close promises to resolve. Rejected
+or unconfirmed shutdown produces no success receipt and cannot set
+`cleanupCompleted: true`. A timeout is **not proof that Chromium stopped**:
+an unresponsive/defective launcher may leave a process or in-flight operation
+alive; do not retry or treat local/session cleanup as verified. This is bounded
+waiting, not OS-level process termination or server-session revocation.
+The trusted launcher seam exists for owned tests; it must not be supplied from
+job JSON or used to enable recording/session reuse.
 
 No storage-state file, profile, screenshot, video, trace, account logging or
 credential-bearing exception is produced. Run without Playwright debug/protocol
@@ -89,11 +110,25 @@ The shared browser displayed in an editor is not reused for credential entry.
 ## Local checks and retained handover evidence
 
 `npm run test:customer-login` compiles and runs owned Chromium fixtures.
-All browser requests are intercepted locally; it does not contact the customer
-site. Coverage includes a single successful submit, background-logo/rejected
+Customer-URL fixtures remap only the guarded transport to owned loopback HTTP
+servers; they do not contact the customer site. Separate real loopback HTTP
+tests exercise 301/302/303/307/308 redirects to off-origin destinations,
+same-origin unapproved paths and chains, plus off-origin POST fetch,
+top-level/iframe forms and same-origin fetch redirect chains. Destination
+server counters must remain **zero**, including the blocked next chain hop.
+An approved same-origin POST is also tested to avoid a vacuous deny-all result.
+Coverage includes a single successful submit, background-logo/rejected
 login false positives, wrong URL/text/visibility, blocked redirect, missing
 form, cancellation, timeout, invalid preflight, late acquisition, safe errors
-and disposal/cleanup. It is included in `test:features:regression`.
+and disposal/cleanup. Never-settling context, browser, and both-close faults
+are tested after successful assertions, assertion failure, cancellation and
+timeout: both closures are attempted, the safe result fails within the deadline
+plus cleanup budget, and the provider is disposed. Tests explicitly rescue
+their owned browsers afterwards; this is not evidence that a hung production
+close stopped its process. It is included in `test:features:regression`.
+
+Live customer acceptance remains **PENDING**. No live credentials, customer
+attempts or shared/staging browser interactions are part of these checks.
 
 For RRDSCRUM-62, retain rather than unnecessarily rerun
 [merged PR #21](https://github.com/releaseready/universal-playwright-framework/pull/21)

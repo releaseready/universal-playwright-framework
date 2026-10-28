@@ -12,6 +12,65 @@ export interface RuntimeLoginBrowserOptions {
   readonly launchBrowser?: (timeoutMs: number) => Promise<Browser>;
 }
 
+export const LOGIN_CLEANUP_TIMEOUT_MS = 1_000;
+
+/** Transport guard: never let the browser automatically follow an HTTP redirect. */
+export async function guardLoginRequests(
+  context: BrowserContext,
+  approvedOrigin: string,
+  loginUrl: string,
+): Promise<() => void> {
+  const target = new URL(loginUrl);
+  if (
+    target.origin !== approvedOrigin ||
+    !["http:", "https:"].includes(target.protocol) ||
+    target.username ||
+    target.password
+  ) {
+    throw new Error("Invalid login destination policy");
+  }
+  let blocked = false;
+  await context.routeWebSocket("**/*", (socket) => {
+    blocked = true;
+    socket.close();
+  });
+  await context.route("**/*", async (route) => {
+    try {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (
+        url.origin !== approvedOrigin ||
+        url.username ||
+        url.password ||
+        (request.isNavigationRequest() && request.url() !== loginUrl)
+      ) {
+        blocked = true;
+        await route.abort("blockedbyclient");
+        return;
+      }
+      const response = await route.fetch({ maxRedirects: 0 });
+      try {
+        // Playwright routing does not intercept subsequent HTTP redirect hops.
+        // Reject even same-origin redirects rather than handing a 30x to Chromium.
+        if (response.status() >= 300 && response.status() < 400) {
+          blocked = true;
+          await route.abort("blockedbyclient");
+          return;
+        }
+        await route.fulfill({ response });
+      } finally {
+        await response.dispose();
+      }
+    } catch {
+      blocked = true;
+      await route.abort("blockedbyclient").catch(() => undefined);
+    }
+  });
+  return () => {
+    if (blocked) throw new Error("Login request policy was not satisfied");
+  };
+}
+
 export async function withFreshLoginPage(
   consume: (page: Page) => Promise<void>,
   options: RuntimeLoginBrowserOptions = {},
@@ -21,50 +80,100 @@ export async function withFreshLoginPage(
     throw new Error("Login browser timeout is invalid");
   }
   const controller = new AbortController();
-  const abort = (): void => controller.abort();
+  const closures = new Map<Browser | BrowserContext, Promise<boolean>>();
+  const close = (resource: Browser | BrowserContext | undefined): void => {
+    if (resource && !closures.has(resource)) {
+      closures.set(
+        resource,
+        Promise.resolve()
+          .then(() => resource.close())
+          .then(
+            () => true,
+            () => false,
+          ),
+      );
+    }
+  };
+  let browser: Browser | undefined;
+  let context: BrowserContext | undefined;
+  const abort = (): void => {
+    controller.abort();
+    close(context);
+    close(browser);
+  };
   const timer = setTimeout(abort, timeoutMs);
   options.signal?.addEventListener("abort", abort, { once: true });
   if (options.signal?.aborted) abort();
-  let browser: Browser | undefined;
-  let context: BrowserContext | undefined;
-  let closing: Promise<void> | undefined;
-  let closeFailed = false;
-  const closeBrowser = (): void => {
-    if (browser && !closing) {
-      closing = browser.close().catch(() => {
-        closeFailed = true;
-      });
+  const deadline = Date.now() + timeoutMs;
+  const checkActive = (): void => {
+    if (controller.signal.aborted) {
+      close(context);
+      close(browser);
+      throw new Error("Login browser operation interrupted");
     }
   };
-  controller.signal.addEventListener("abort", closeBrowser, { once: true });
-  const deadline = Date.now() + timeoutMs;
-  try {
-    controller.signal.throwIfAborted();
+  let rejectInterrupted: (() => void) | undefined;
+  const interrupted = new Promise<never>((_, reject) => {
+    rejectInterrupted = () =>
+      reject(new Error("Login browser operation interrupted"));
+    controller.signal.addEventListener("abort", rejectInterrupted, {
+      once: true,
+    });
+  });
+  const work = async (): Promise<void> => {
+    checkActive();
     browser = await (options.launchBrowser
       ? options.launchBrowser(timeoutMs)
       : chromium.launch({ headless: true, timeout: timeoutMs }));
-    controller.signal.throwIfAborted();
+    checkActive();
     context = await browser.newContext({
       acceptDownloads: false,
       serviceWorkers: "block",
     });
-    controller.signal.throwIfAborted();
+    checkActive();
     const page = await context.newPage();
-    controller.signal.throwIfAborted();
+    checkActive();
     page.setDefaultTimeout(Math.max(1, deadline - Date.now()));
     page.setDefaultNavigationTimeout(Math.max(1, deadline - Date.now()));
     await consume(page);
-    controller.signal.throwIfAborted();
+    checkActive();
+  };
+  try {
+    await Promise.race([work(), interrupted]);
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", abort);
-    controller.signal.removeEventListener("abort", closeBrowser);
+    if (rejectInterrupted)
+      controller.signal.removeEventListener("abort", rejectInterrupted);
+    close(context);
+    let cleanupTimer: NodeJS.Timeout | undefined;
     try {
-      await context?.close();
+      // Give normal context shutdown a head start, but never let it prevent
+      // the independent browser-close attempt within the shared cleanup budget.
+      if (context) {
+        await Promise.race([
+          closures.get(context),
+          new Promise<void>((resolve) => {
+            cleanupTimer = setTimeout(resolve, LOGIN_CLEANUP_TIMEOUT_MS / 2);
+          }),
+        ]);
+        clearTimeout(cleanupTimer);
+      }
+      close(browser);
+      const confirmed = await Promise.race([
+        Promise.all(closures.values()).then((results) =>
+          results.every(Boolean),
+        ),
+        new Promise<false>((resolve) => {
+          cleanupTimer = setTimeout(
+            () => resolve(false),
+            LOGIN_CLEANUP_TIMEOUT_MS / 2,
+          );
+        }),
+      ]);
+      if (!confirmed) throw new Error("Login browser shutdown is unconfirmed");
     } finally {
-      closeBrowser();
-      await closing;
-      if (closeFailed) throw new Error("Login browser cleanup failed");
+      clearTimeout(cleanupTimer);
     }
   }
 }

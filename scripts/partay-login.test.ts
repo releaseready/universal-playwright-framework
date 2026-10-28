@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { inspect } from "node:util";
 import { test } from "node:test";
+import { createServer } from "node:http";
+import { setTimeout as delay } from "node:timers/promises";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import type {
   PreparedInputDescriptor,
@@ -16,6 +18,11 @@ import {
   PARTAY_LOGIN_URL,
   verifyPartayLogin,
 } from "../src/customer-login/partay";
+import {
+  guardLoginRequests,
+  LOGIN_CLEANUP_TIMEOUT_MS,
+  withFreshLoginPage,
+} from "../src/execution/runtime-login-browser";
 
 const canary = {
   username: "OWNED_WEB8_USERNAME_CANARY",
@@ -151,12 +158,9 @@ function ownedBrowser(mode: Mode, afterSubmit?: () => void) {
           submissions += 1;
           afterSubmit?.();
         });
-        await context.route("**/*", async (route) => {
-          requests.push(route.request().url());
-          assert.equal(route.request().url(), PARTAY_LOGIN_URL);
-          await route.fulfill({
-            contentType: "text/html",
-            body: `<!doctype html>
+        const server = createServer((_request, response) => {
+          response.setHeader("Content-Type", "text/html");
+          response.end(`<!doctype html>
               <div id="brandLogo" ${mode === "hidden-logo" ? 'style="display:none"' : ""}>${mode === "wrong-logo" ? "Not Partay" : "Par<b>tay</b>"}</div>
               <div id="overlay" ${mode === "missing-form" ? 'style="display:none"' : ""}>
                 <input id="username"><input id="password" type="password">
@@ -173,9 +177,32 @@ function ownedBrowser(mode: Mode, afterSubmit?: () => void) {
                   overlay.style.display = "none";
                   if (${JSON.stringify(mode)} === "wrong-url") history.pushState({}, "", "/other");
                 };
-              </script>`,
-          });
+              </script>`);
         });
+        await new Promise<void>((resolve) =>
+          server.listen(0, "127.0.0.1", resolve),
+        );
+        const address = server.address();
+        assert.ok(address && typeof address !== "string");
+        const fixtureUrl = `http://127.0.0.1:${address.port}/`;
+        browser!.on("disconnected", () => {
+          server.closeAllConnections();
+          server.close();
+        });
+        const registerRoute = context.route.bind(context);
+        context.route = async (url, handler) => {
+          await registerRoute(url, async (route, request) => {
+            // Only the transport is remapped. The production guard still checks
+            // the customer URL and fetch options; no customer request is sent.
+            route.fetch = async (fetchOptions) => {
+              assert.equal(fetchOptions?.maxRedirects, 0);
+              requests.push(route.request().url());
+              assert.equal(route.request().url(), PARTAY_LOGIN_URL);
+              return context.request.get(fixtureUrl, { maxRedirects: 0 });
+            };
+            await handler(route, request);
+          });
+        };
         const newPage = context.newPage.bind(context);
         context.newPage = async () => {
           page = await newPage();
@@ -361,6 +388,8 @@ test("late browser acquisition after cancellation is still closed", async () => 
     }),
     assertSafe,
   );
+  for (let i = 0; i < 100 && !browser; i += 1) await delay(20);
+  for (let i = 0; i < 100 && browser?.isConnected(); i += 1) await delay(20);
   assert.equal(browser?.isConnected(), false);
   await assertDisposed(provider, request);
 });
@@ -376,6 +405,306 @@ test("launcher failure is sanitized and disposes input", async () => {
     assertSafe,
   );
   await assertDisposed(provider, request);
+});
+
+async function localTransport(
+  run: (
+    source: string,
+    destination: string,
+    counts: Map<string, number>,
+  ) => Promise<void>,
+): Promise<void> {
+  const counts = new Map<string, number>();
+  const destination = createServer((request, response) => {
+    counts.set("destination", (counts.get("destination") ?? 0) + 1);
+    request.resume();
+    response.end("unintended");
+  });
+  destination.on("upgrade", (_request, socket) => {
+    counts.set("destination", (counts.get("destination") ?? 0) + 1);
+    socket.destroy();
+  });
+  let destinationUrl = "";
+  const source = createServer((request, response) => {
+    const path = request.url ?? "/";
+    counts.set(path, (counts.get(path) ?? 0) + 1);
+    request.resume();
+    if (path === "/" || path === "/api") {
+      response.setHeader("Content-Type", "text/html");
+      response.end("<!doctype html><title>Owned login</title>");
+    } else {
+      response.statusCode = Number(path.match(/^\/(\d+)/)?.[1] ?? 302);
+      response.setHeader(
+        "Location",
+        path.includes("chain")
+          ? "/hop"
+          : path.includes("same-origin")
+            ? "/unapproved"
+            : destinationUrl,
+      );
+      response.end();
+    }
+  });
+  const listen = async (
+    server: ReturnType<typeof createServer>,
+  ): Promise<string> => {
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    return `http://127.0.0.1:${address.port}/`;
+  };
+  try {
+    destinationUrl = await listen(destination);
+    await run(await listen(source), destinationUrl, counts);
+  } finally {
+    await Promise.all(
+      [source, destination].map(async (server) => {
+        server.closeAllConnections();
+        await new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
+      }),
+    );
+  }
+}
+
+for (const status of [301, 302, 303, 307, 308]) {
+  for (const kind of ["external", "same-origin", "chain"]) {
+    test(`real HTTP ${status} ${kind} document redirect sends zero destination requests`, async () => {
+      await localTransport(async (source, _destination, counts) => {
+        const login = `${source}${status}-${kind}`;
+        await assert.rejects(
+          withFreshLoginPage(async (page) => {
+            await guardLoginRequests(
+              page.context(),
+              new URL(source).origin,
+              login,
+            );
+            await page.goto(login);
+          }),
+        );
+        assert.equal(counts.get(`/${status}-${kind}`), 1);
+        assert.equal(counts.get("/hop") ?? 0, 0);
+        assert.equal(counts.get("/unapproved") ?? 0, 0);
+        assert.equal(counts.get("destination") ?? 0, 0);
+      });
+    });
+  }
+}
+
+test("approved same-origin document and non-navigation POST remain usable", async () => {
+  await localTransport(async (source, _destination, counts) => {
+    await withFreshLoginPage(async (page) => {
+      const assertAllowed = await guardLoginRequests(
+        page.context(),
+        new URL(source).origin,
+        source,
+      );
+      await page.goto(source);
+      assert.equal(
+        await page.evaluate(
+          async () =>
+            (await fetch("/api", { method: "POST", body: "owned-value" }))
+              .status,
+        ),
+        200,
+      );
+      assertAllowed();
+    });
+    assert.equal(counts.get("/"), 1);
+    assert.equal(counts.get("/api"), 1);
+    assert.equal(counts.get("destination") ?? 0, 0);
+  });
+});
+
+for (const action of [
+  "fetch",
+  "form",
+  "iframe-form",
+  "fetch-redirect-chain",
+  "fetch-redirect-external",
+  "websocket",
+]) {
+  test(`real ${action} submission sends zero unintended requests`, async () => {
+    await localTransport(async (source, destination, counts) => {
+      await assert.rejects(
+        withFreshLoginPage(async (page) => {
+          const assertAllowed = await guardLoginRequests(
+            page.context(),
+            new URL(source).origin,
+            source,
+          );
+          await page.goto(source);
+          const url = action.startsWith("fetch-redirect")
+            ? `${source}307-${action.endsWith("chain") ? "chain" : "external"}`
+            : destination;
+          if (action === "websocket") {
+            await page.evaluate(
+              (destination) =>
+                new Promise<void>((resolve) => {
+                  const socket = new WebSocket(
+                    destination.replace("http:", "ws:"),
+                  );
+                  socket.onerror = () => resolve();
+                  socket.onclose = () => resolve();
+                }),
+              destination,
+            );
+            assertAllowed();
+            return;
+          }
+          const failed = page.waitForEvent("requestfailed", {
+            predicate: (request) => request.url() === url,
+          });
+          await page.evaluate(
+            ({ url, action, canary }) => {
+              if (action.startsWith("fetch")) {
+                void fetch(url, {
+                  method: "POST",
+                  body: canary.password,
+                }).catch(() => undefined);
+              } else {
+                const form = document.createElement("form");
+                form.method = "POST";
+                form.action = url;
+                if (action === "iframe-form") {
+                  const iframe = document.createElement("iframe");
+                  iframe.name = "submission";
+                  document.body.append(iframe);
+                  form.target = iframe.name;
+                }
+                const input = document.createElement("input");
+                input.name = "password";
+                input.value = canary.password;
+                form.append(input);
+                document.body.append(form);
+                form.submit();
+              }
+            },
+            { url, action, canary },
+          );
+          await failed;
+          assertAllowed();
+        }),
+      );
+      assert.equal(counts.get("destination") ?? 0, 0);
+      assert.equal(counts.get("/hop") ?? 0, 0);
+      assert.equal(counts.get("/unapproved") ?? 0, 0);
+      if (action.startsWith("fetch-redirect"))
+        assert.equal(
+          counts.get(`/307-${action.endsWith("chain") ? "chain" : "external"}`),
+          1,
+        );
+    });
+  });
+}
+
+for (const fault of ["context", "browser", "both"]) {
+  for (const outcome of ["success", "failure", "cancel", "timeout"] as const) {
+    test(`never-settling ${fault} close after ${outcome} is bounded, safe and disposes provider`, async () => {
+      const { descriptor, request, provider } = fixture();
+      const controller = new AbortController();
+      const owned = ownedBrowser(
+        outcome === "failure"
+          ? "wrong-logo"
+          : outcome === "success"
+            ? "success"
+            : "waiting",
+        outcome === "cancel" ? () => controller.abort() : undefined,
+      );
+      let contextAttempts = 0;
+      let browserAttempts = 0;
+      let cleanupStarted = 0;
+      let rescue: (() => Promise<void>) | undefined;
+      const started = Date.now();
+      try {
+        await assert.rejects(
+          verifyPartayLogin(descriptor, request, provider, {
+            signal: controller.signal,
+            timeoutMs: 2000,
+            launchBrowser: async (timeout) => {
+              const browser = await owned.launchBrowser(timeout);
+              const browserClose = browser.close.bind(browser);
+              rescue = browserClose;
+              browser.close = async () => {
+                browserAttempts += 1;
+                if (fault !== "context")
+                  await new Promise<void>(() => undefined);
+                else await browserClose();
+              };
+              const newContext = browser.newContext.bind(browser);
+              browser.newContext = async (options) => {
+                const context = await newContext(options);
+                const contextClose = context.close.bind(context);
+                context.close = async () => {
+                  contextAttempts += 1;
+                  cleanupStarted = Date.now();
+                  if (fault !== "browser")
+                    await new Promise<void>(() => undefined);
+                  else await contextClose();
+                };
+                return context;
+              };
+              return browser;
+            },
+          }),
+          assertSafe,
+        );
+        assert.ok(
+          Date.now() - started < 2000 + LOGIN_CLEANUP_TIMEOUT_MS + 1500,
+        );
+        assert.equal(contextAttempts, 1);
+        assert.equal(browserAttempts, 1);
+        assert.equal(owned.submissions, 1);
+        assert.ok(Date.now() - cleanupStarted < LOGIN_CLEANUP_TIMEOUT_MS + 300);
+        await assertDisposed(provider, request);
+      } finally {
+        await rescue?.();
+      }
+    });
+  }
+}
+
+test("close rejections arriving after the cleanup bound stay handled and cannot produce success", async () => {
+  const { descriptor, request, provider } = fixture();
+  const owned = ownedBrowser("success");
+  let rescue: (() => Promise<void>) | undefined;
+  const lateCloses: Promise<void>[] = [];
+  const lateReject = (): Promise<void> => {
+    const rejection = delay(LOGIN_CLEANUP_TIMEOUT_MS + 200).then(() => {
+      throw new Error(canary.password);
+    });
+    lateCloses.push(rejection);
+    return rejection;
+  };
+  try {
+    await assert.rejects(
+      verifyPartayLogin(descriptor, request, provider, {
+        launchBrowser: async (timeout) => {
+          const browser = await owned.launchBrowser(timeout);
+          rescue = browser.close.bind(browser);
+          browser.close = lateReject;
+          const newContext = browser.newContext.bind(browser);
+          browser.newContext = async (options) => {
+            const context = await newContext(options);
+            context.close = lateReject;
+            return context;
+          };
+          return browser;
+        },
+      }),
+      assertSafe,
+    );
+    assert.equal(owned.submissions, 1);
+    assert.equal(lateCloses.length, 2);
+    await assertDisposed(provider, request);
+    // Let both delayed failures arrive after the consumer has already returned.
+    await delay(LOGIN_CLEANUP_TIMEOUT_MS);
+  } finally {
+    await rescue?.();
+  }
 });
 
 test("cancellation during context acquisition closes late context and browser", async () => {
@@ -398,6 +727,7 @@ test("cancellation during context acquisition closes late context and browser", 
     }),
     assertSafe,
   );
+  for (let i = 0; i < 100 && !owned.contextClosed; i += 1) await delay(20);
   assert.equal(owned.submissions, 0);
   assert.equal(owned.contextClosed, true);
   assert.equal(owned.browserClosed, true);
