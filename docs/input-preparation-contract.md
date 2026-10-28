@@ -245,6 +245,14 @@ or a terminal already in use. Terminal mode and listeners are restored on both
 success and failure. There is deliberately no command-line argument,
 environment-variable, saved-file, or Git credential fallback.
 
+The separately authorized Partay CLI now has an explicit, opt-in
+[private-file input path](./partay-login.md#separately-approved-private-file-input).
+This does not change `withOperatorLoginInputs` or add an automatic fallback.
+It deliberately persists credentials until a validated outside-repository file
+is consumed/unlinked, and therefore is not runtime-only collection. It requires
+separate review before live use; the earlier runtime-only evidence does not
+certify this new input path.
+
 `withOperatorLoginInputs` constructs the per-run in-memory provider, resolves
 the account through the existing `RuntimeSecretProvider.resolve(reference,
 scope)` method, checks the review again after asynchronous resolution, and calls
