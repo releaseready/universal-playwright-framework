@@ -31,6 +31,8 @@
     "test:parallel": "playwright test --workers=4",
     "build:cucumber": "tsc --project tsconfig.cucumber.json",
     "test:input-preparation": "npm run build:cucumber && cucumber-js --config cucumber-input-preparation.json && node --test dist/cucumber/scripts/data-references.test.js dist/cucumber/scripts/runtime-login.test.js",
+    "test:customer-login": "npm run build:cucumber && node --test dist/cucumber/scripts/partay-login.test.js",
+    "verify:partay-login": "npm run build:cucumber && node dist/cucumber/scripts/verify-partay-login.js",
     "test:validation": "npm run build:cucumber && node --test dist/cucumber/scripts/feature-validation.test.js",
     "test:features": "npm run build:cucumber && cucumber-js --config cucumber.json",
     "test:execution": "npm run build:cucumber && node --test dist/cucumber/scripts/execution-adapter.test.js && cucumber-js --config cucumber-retry-regression.json",
@@ -38,7 +40,7 @@
     "test:adapter": "npm run build:cucumber && node --test dist/cucumber/scripts/adapter-contract.test.js && cucumber-js --config cucumber-adapter.json",
     "review:revision": "npm run build && node dist/cucumber/scripts/reviewed-revision.js",
     "execute:synthetic": "npm run build:cucumber && node dist/cucumber/src/execution/cli.js",
-    "test:features:regression": "npm run test:input-preparation && npm run test:validation && npm run test:features && npm run test:execution && node --test dist/cucumber/scripts/cucumber-timeouts.test.js && npm run test:reporting && npm run test:adapter",
+    "test:features:regression": "npm run test:input-preparation && npm run test:customer-login && npm run test:validation && npm run test:features && npm run test:execution && node --test dist/cucumber/scripts/cucumber-timeouts.test.js && npm run test:reporting && npm run test:adapter",
     "report": "playwright show-report",
     "report:allure": "allure serve allure-results",
     "clean": "rimraf dist reports screenshots test-results",
@@ -99,7 +101,8 @@
     "tsconfig.cucumber.json",
     "docs/local-adapter-contract.md",
     "README.md",
-    "docs/input-preparation-contract.md"
+    "docs/input-preparation-contract.md",
+    "docs/partay-login.md"
   ],
   "publishConfig": {
     "access": "public"

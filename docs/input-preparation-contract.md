@@ -305,3 +305,8 @@ Web8 reviewed login, Web6 execution join, and RRDSCRUM-62 secure handover are
 connected and the joined customer confidentiality/isolation evidence passes.
 A synthetic canary pass is not that customer acceptance evidence. No customer
 credentials or live customer login are included in this change.
+
+The RRDWEB-8 [Partay login-only consumer](./partay-login.md) uses this boundary
+with a fresh browser context, exact target/logo/overlay assertions, bounded
+execution and cleanup. Its synthetic results do not replace joined customer
+acceptance or independently approved runtime inputs.
