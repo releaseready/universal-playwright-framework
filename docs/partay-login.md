@@ -161,6 +161,10 @@ are conservatively `operational`. No observed page text is retained. A request
 policy violation overrides assertion evidence, including one observed during
 cleanup. Failed secret-provider disposal downgrades assertion evidence to
 `operational` while preserving the separate browser cleanup status.
+Cancellation and deadline expiry are checked again after cleanup; either makes
+the final outcome ineligible even when the comparison had already failed and
+browser cleanup is confirmed. Recorded request-policy failures still take
+precedence over those classifications.
 
 Central may offer a **manual review candidate** only for a trusted run with
 `failureClassification: "assertion-failed"`, `failureStage: "brand-text"`,
@@ -170,6 +174,13 @@ in-process contract, not authentication: central must bind the result to its
 trusted run and reviewed SDK revision, and must not accept a caller's fabricated
 report. No classification confirms a product bug or creates a defect. A human
 must review the evidence and follow the defect template before creating one.
+
+The synthetic-adapter integrity fingerprint does **not** cover
+`src/customer-login/partay.ts` or `src/execution/runtime-login-browser.ts` (or
+their compiled output). It therefore cannot attest this classifier on its own.
+Central must verify immutable package/source provenance for the reviewed
+classifier implementation; neither that fingerprint nor a caller-created
+`RuntimeLoginFailure` is proof of trustworthy assertion evidence.
 
 The operator-reported attempt on revision `59664fe` returned
 `submission-assertion` / `confirmed` with no automatic retry. Its login remains

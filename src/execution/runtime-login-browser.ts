@@ -256,6 +256,19 @@ export async function withFreshLoginPage(
       clearTimeout(cleanupTimer);
     }
   }
+  // Cleanup has its own bounded budget. The work timer/listener are already
+  // detached, so recheck both before publishing evidence or a success receipt.
+  const finalInterruption =
+    interruption ??
+    (options.signal?.aborted
+      ? "interrupted"
+      : Date.now() >= deadline
+        ? "timed-out"
+        : undefined);
+  if (finalInterruption) {
+    failureStage ??= stage;
+    failureClassification = finalInterruption;
+  }
   // A blocked request can explain a broken page. It always outranks assertion
   // evidence, even when work threw before its normal policy check.
   try {

@@ -1474,6 +1474,10 @@ for (const outcome of [
   "timeout",
   "policy-before-error",
   "policy-during-cleanup",
+  "cancel-during-cleanup",
+  "deadline-during-cleanup",
+  "policy-with-cancel-during-cleanup",
+  "policy-with-deadline-during-cleanup",
   "pending-transport",
   "cleanup-failure",
 ] as const) {
@@ -1496,7 +1500,10 @@ for (const outcome of [
       },
       close: async () => {
         closes += 1;
-        if (outcome === "policy-during-cleanup") await blockedRequest();
+        if (outcome.includes("cancel-during-cleanup")) controller.abort();
+        if (outcome.includes("deadline-during-cleanup")) await delay(60);
+        if (outcome.startsWith("policy") && outcome.endsWith("during-cleanup"))
+          await blockedRequest();
         if (outcome === "cleanup-failure") throw new Error(canary.password);
       },
       newPage: async () => ({
@@ -1558,6 +1565,10 @@ for (const outcome of [
           timeout: "timed-out",
           "policy-before-error": "request-policy",
           "policy-during-cleanup": "request-policy",
+          "cancel-during-cleanup": "interrupted",
+          "deadline-during-cleanup": "timed-out",
+          "policy-with-cancel-during-cleanup": "request-policy",
+          "policy-with-deadline-during-cleanup": "request-policy",
           "pending-transport": "request-policy",
           "cleanup-failure": "assertion-failed",
         };
