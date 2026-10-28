@@ -4,6 +4,11 @@ import {
   type BrowserContext,
   type Page,
 } from "@playwright/test";
+import {
+  RuntimeLoginFailure,
+  type RuntimeLoginFailureStage,
+  type RuntimeLoginCleanupStatus,
+} from "../input-preparation/runtime-login";
 
 export interface RuntimeLoginBrowserOptions {
   readonly signal?: AbortSignal;
@@ -72,12 +77,15 @@ export async function guardLoginRequests(
 }
 
 export async function withFreshLoginPage(
-  consume: (page: Page) => Promise<void>,
+  consume: (
+    page: Page,
+    setStage: (stage: "navigation" | "submission-assertion") => void,
+  ) => Promise<void>,
   options: RuntimeLoginBrowserOptions = {},
 ): Promise<void> {
   const timeoutMs = options.timeoutMs ?? 30_000;
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000) {
-    throw new Error("Login browser timeout is invalid");
+    throw new RuntimeLoginFailure("input-validation", "not-acquired");
   }
   const controller = new AbortController();
   const closures = new Map<Browser | BrowserContext, Promise<boolean>>();
@@ -96,6 +104,11 @@ export async function withFreshLoginPage(
   };
   let browser: Browser | undefined;
   let context: BrowserContext | undefined;
+  let pendingAcquisition = false;
+  let acquisitionInterrupted = false;
+  let stage: RuntimeLoginFailureStage = "browser-startup";
+  let failureStage: RuntimeLoginFailureStage | undefined;
+  let cleanupStatus: RuntimeLoginCleanupStatus = "unconfirmed";
   const abort = (): void => {
     controller.abort();
     close(context);
@@ -122,24 +135,41 @@ export async function withFreshLoginPage(
   });
   const work = async (): Promise<void> => {
     checkActive();
-    browser = await (options.launchBrowser
-      ? options.launchBrowser(timeoutMs)
-      : chromium.launch({ headless: true, timeout: timeoutMs }));
+    pendingAcquisition = true;
+    try {
+      browser = await (options.launchBrowser
+        ? options.launchBrowser(timeoutMs)
+        : chromium.launch({ headless: true, timeout: timeoutMs }));
+    } finally {
+      pendingAcquisition = false;
+    }
     checkActive();
-    context = await browser.newContext({
-      acceptDownloads: false,
-      serviceWorkers: "block",
-    });
+    pendingAcquisition = true;
+    try {
+      context = await browser.newContext({
+        acceptDownloads: false,
+        serviceWorkers: "block",
+      });
+    } finally {
+      pendingAcquisition = false;
+    }
     checkActive();
     const page = await context.newPage();
     checkActive();
     page.setDefaultTimeout(Math.max(1, deadline - Date.now()));
     page.setDefaultNavigationTimeout(Math.max(1, deadline - Date.now()));
-    await consume(page);
+    stage = "submission-assertion";
+    await consume(page, (next) => {
+      if (next === "navigation" || next === "submission-assertion")
+        stage = next;
+    });
     checkActive();
   };
   try {
     await Promise.race([work(), interrupted]);
+  } catch {
+    failureStage = stage;
+    acquisitionInterrupted = pendingAcquisition;
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", abort);
@@ -171,9 +201,17 @@ export async function withFreshLoginPage(
           );
         }),
       ]);
-      if (!confirmed) throw new Error("Login browser shutdown is unconfirmed");
+      cleanupStatus =
+        !confirmed || pendingAcquisition || acquisitionInterrupted
+          ? "unconfirmed"
+          : browser || context
+            ? "confirmed"
+            : "not-acquired";
     } finally {
       clearTimeout(cleanupTimer);
     }
+  }
+  if (failureStage || cleanupStatus === "unconfirmed") {
+    throw new RuntimeLoginFailure(failureStage ?? "cleanup", cleanupStatus);
   }
 }

@@ -90,6 +90,42 @@ export class RuntimeLoginError extends Error {
   }
 }
 
+export const RUNTIME_LOGIN_FAILURE_STAGES = Object.freeze([
+  "input-validation",
+  "browser-startup",
+  "navigation",
+  "submission-assertion",
+  "cleanup",
+  "input-disposal",
+  "unclassified",
+] as const);
+export type RuntimeLoginFailureStage =
+  (typeof RUNTIME_LOGIN_FAILURE_STAGES)[number];
+export const RUNTIME_LOGIN_CLEANUP_STATUSES = Object.freeze([
+  "not-acquired",
+  "confirmed",
+  "unconfirmed",
+] as const);
+export type RuntimeLoginCleanupStatus =
+  (typeof RUNTIME_LOGIN_CLEANUP_STATUSES)[number];
+
+/** Reconstruct only allowlisted metadata; never retain an exception or cause. */
+export class RuntimeLoginFailure extends RuntimeLoginError {
+  readonly failureStage: RuntimeLoginFailureStage;
+  readonly cleanupStatus: RuntimeLoginCleanupStatus;
+
+  constructor(failureStage: unknown, cleanupStatus: unknown) {
+    super("runtime-login-failed");
+    this.failureStage =
+      RUNTIME_LOGIN_FAILURE_STAGES.find((stage) => stage === failureStage) ??
+      "unclassified";
+    this.cleanupStatus =
+      RUNTIME_LOGIN_CLEANUP_STATUSES.find(
+        (status) => status === cleanupStatus,
+      ) ?? "unconfirmed";
+  }
+}
+
 function fail(code: RuntimeLoginErrorCode): never {
   throw new RuntimeLoginError(code);
 }
@@ -284,6 +320,7 @@ export async function consumeRuntimeLoginInputs(
   provider: RuntimeSecretProvider,
   consume: (account: RuntimeLoginAccount) => Promise<void>,
 ): Promise<RuntimeLoginResult> {
+  let consumerFailure: RuntimeLoginFailure | undefined;
   try {
     const reviewed = validateRuntimeLoginRequest(descriptor, request);
     let account: RuntimeLoginValues | undefined;
@@ -309,8 +346,15 @@ export async function consumeRuntimeLoginInputs(
       validateRuntimeLoginRequest(descriptor, reviewed);
       try {
         await consume(account);
-      } catch {
+      } catch (error) {
         // Never propagate a browser exception that may embed credentials.
+        if (error instanceof RuntimeLoginFailure) {
+          consumerFailure = new RuntimeLoginFailure(
+            error.failureStage,
+            error.cleanupStatus,
+          );
+          throw consumerFailure;
+        }
         return fail("runtime-login-failed");
       }
     } finally {
@@ -326,7 +370,10 @@ export async function consumeRuntimeLoginInputs(
     try {
       provider.dispose?.();
     } catch {
-      fail("runtime-input-unavailable");
+      throw (
+        consumerFailure ??
+        new RuntimeLoginFailure("input-disposal", "unconfirmed")
+      );
     }
   }
 }
