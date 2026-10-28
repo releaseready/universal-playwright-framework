@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { inspect } from "node:util";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import { spawnSync } from "node:child_process";
@@ -27,7 +27,6 @@ import {
   RUNTIME_LOGIN_POLICY_REASONS,
   consumeRuntimeLoginInputs,
   type RuntimeLoginRequest,
-  type RuntimeLoginAccount,
 } from "../src/input-preparation/runtime-login";
 import {
   PARTAY_LOGIN_URL,
@@ -40,157 +39,140 @@ import {
   LOGIN_CLEANUP_TIMEOUT_MS,
   withFreshLoginPage,
 } from "../src/execution/runtime-login-browser";
-import {
-  mkdtemp,
-  writeFile,
-  chmod,
-  access,
-  rm,
-  symlink,
-  link,
-  mkdir,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import fsPromises = require("node:fs/promises");
+import runtimeLoginModule = require("../src/input-preparation/runtime-login");
 import { tmpdir } from "node:os";
-import { withPrivateFileLoginInputs } from "../src/input-preparation/private-login-file";
+import {
+  PRIVATE_FILE_LOGIN_DEFERRED_MESSAGE,
+  PrivateFileLoginDeferredError,
+  withPrivateFileLoginInputs,
+} from "../src/input-preparation/private-login-file";
 
 const canary = {
   username: "OWNED_WEB8_USERNAME_CANARY",
   password: "OWNED_WEB8_PASSWORD_CANARY",
 };
 
-for (const outcome of ["success", "rejected", "cancelled"] as const) {
-  test(`owned private-file ${outcome} removes disk input before browser acquisition`, async () => {
-    const directory = await mkdtemp(join(tmpdir(), "owned-private-browser-"));
-    const file = join(directory, "account.json");
-    const root = join(directory, "repository");
-    const { descriptor, request, provider } = fixture();
-    provider.dispose();
-    const controller = new AbortController();
-    const owned = ownedBrowser(
-      outcome === "success" ? "success" : "waiting",
-      outcome === "cancelled" ? () => controller.abort() : undefined,
+test("private-file entry points reject before touching or consuming synthetic input", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "owned-private-login-"));
+  const file = join(directory, "account.json");
+  const repositoryRoot = join(directory, "repository");
+  const contents = JSON.stringify(canary);
+  const { descriptor, request, provider } = fixture();
+  provider.dispose();
+  let consumed = 0;
+  let browserAcquisitions = 0;
+  try {
+    await mkdir(repositoryRoot, { mode: 0o700 });
+    await writeFile(file, contents, { mode: 0o600 });
+    const fileSpies = [
+      mock.method(fsPromises, "access"),
+      mock.method(fsPromises, "lstat"),
+      mock.method(fsPromises, "open"),
+      mock.method(fsPromises, "readFile"),
+      mock.method(fsPromises, "realpath"),
+      mock.method(fsPromises, "stat"),
+      mock.method(fsPromises, "unlink"),
+    ];
+    const providerSpy = mock.method(
+      runtimeLoginModule,
+      "InMemoryRuntimeSecretProvider",
+    );
+    const consumerSpy = mock.method(
+      runtimeLoginModule,
+      "consumeRuntimeLoginInputs",
     );
     try {
-      await chmod(directory, 0o700);
-      await mkdir(root, { mode: 0o700 });
-      await writeFile(file, JSON.stringify(canary), { mode: 0o600 });
-      const run = privateFileAndVerifyPartayLogin(
-        descriptor,
-        request,
-        file,
-        root,
-        {
-          signal: controller.signal,
-          timeoutMs: 2000,
-          launchBrowser: async (timeout) => {
-            await assert.rejects(access(file), { code: "ENOENT" });
-            return owned.launchBrowser(timeout);
-          },
-        },
-      );
-      if (outcome === "success") assert.equal((await run).status, "completed");
-      else await assert.rejects(run, assertSafe);
-      await assert.rejects(access(file), { code: "ENOENT" });
-      assert.equal(owned.submissions, 1);
-      assert.equal(owned.contextClosed, true);
-      assert.equal(owned.browserClosed, true);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-}
-
-for (const outcome of [
-  "success",
-  "consumer-failure",
-  "invalid-json",
-  "extra-field",
-  "permissions",
-  "directory-permissions",
-  "symlink",
-  "hardlink",
-  "oversized",
-  "inside-repository",
-] as const) {
-  test(`private file ${outcome}: safe one-shot owned input and explicit file lifetime`, async () => {
-    const directory = await mkdtemp(join(tmpdir(), "owned-private-login-"));
-    const file = join(directory, "account.json");
-    const root = join(directory, "repository");
-    const { descriptor, request, provider } = fixture();
-    provider.dispose();
-    let consumed = 0;
-    let retained: RuntimeLoginAccount | undefined;
-    try {
-      await chmod(directory, 0o700);
-      await mkdir(root, { mode: 0o700 });
-      await writeFile(
-        file,
-        outcome === "invalid-json"
-          ? canary.password
-          : outcome === "oversized"
-            ? "x".repeat(8193)
-            : JSON.stringify(
-                outcome === "extra-field"
-                  ? { ...canary, extra: canary.password }
-                  : canary,
-              ),
-        { mode: 0o600 },
-      );
-      if (outcome === "permissions") await chmod(file, 0o644);
-      if (outcome === "directory-permissions") await chmod(directory, 0o755);
-      let candidate = file;
-      if (outcome === "symlink") {
-        candidate = join(directory, "alias");
-        await symlink(file, candidate);
-      }
-      if (outcome === "hardlink") await link(file, join(directory, "alias"));
-      const run = () =>
+      await assert.rejects(
         withPrivateFileLoginInputs(
           descriptor,
           request,
-          candidate,
-          outcome === "inside-repository" ? directory : root,
-          async (account) => {
+          file,
+          repositoryRoot,
+          async () => {
             consumed += 1;
-            retained = account;
-            await assert.rejects(access(file), { code: "ENOENT" });
-            assert.equal(account.username, canary.username);
-            assert.equal(account.password, canary.password);
-            if (outcome === "consumer-failure")
-              throw new Error(canary.password);
           },
-        );
-      if (outcome === "success") {
-        assert.equal((await run()).status, "completed");
-      } else {
-        await assert.rejects(run(), assertSafe);
-      }
-      assert.equal(
-        consumed,
-        ["success", "consumer-failure"].includes(outcome) ? 1 : 0,
+        ),
+        assertPrivateFileDeferred,
       );
-      if (retained) assert.throws(() => retained?.password);
-      const removed = [
-        "success",
-        "consumer-failure",
-        "invalid-json",
-        "extra-field",
-      ].includes(outcome);
-      if (removed) {
-        await assert.rejects(access(file), { code: "ENOENT" });
-        await assert.rejects(run(), assertSafe);
-        assert.equal(
-          consumed,
-          ["success", "consumer-failure"].includes(outcome) ? 1 : 0,
-        );
-      } else {
-        await access(file);
-      }
+      await assert.rejects(
+        privateFileAndVerifyPartayLogin(
+          descriptor,
+          request,
+          file,
+          repositoryRoot,
+          {
+            launchBrowser: async () => {
+              browserAcquisitions += 1;
+              throw new Error("Unexpected browser acquisition");
+            },
+          },
+        ),
+        assertPrivateFileDeferred,
+      );
+      assert.deepEqual(
+        fileSpies.map((spy) => spy.mock.calls.length),
+        [0, 0, 0, 0, 0, 0, 0],
+      );
+      assert.equal(providerSpy.mock.calls.length, 0);
+      assert.equal(consumerSpy.mock.calls.length, 0);
+      assert.equal(consumed, 0);
+      assert.equal(browserAcquisitions, 0);
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      for (const spy of fileSpies) spy.mock.restore();
+      providerSpy.mock.restore();
+      consumerSpy.mock.restore();
     }
-  });
+    assert.equal(await readFile(file, "utf8"), contents);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+function assertPrivateFileDeferred(error: unknown): boolean {
+  assert.ok(error instanceof PrivateFileLoginDeferredError);
+  assert.equal(error.message, PRIVATE_FILE_LOGIN_DEFERRED_MESSAGE);
+  assert.ok(!inspect(error).includes(canary.username));
+  assert.ok(!inspect(error).includes(canary.password));
+  return true;
 }
+
+test("CLI rejects private-account-file mode before reading references or dispatching login", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "owned-private-cli-"));
+  const file = join(directory, "account.json");
+  const contents = JSON.stringify(canary);
+  try {
+    await writeFile(file, contents, { mode: 0o600 });
+    const result = spawnSync(
+      process.execPath,
+      [join(__dirname, "fixtures/private-file-cli.js"), file],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.status, 1);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      referenceReads: 0,
+      promptCalls: 0,
+      fileCalls: 0,
+    });
+    assert.equal(result.stderr, `${PRIVATE_FILE_LOGIN_DEFERRED_MESSAGE}\n`);
+    assert.equal(await readFile(file, "utf8"), contents);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("CLI help documents that private-account-file input is deferred from MVP", () => {
+  const result = spawnSync(
+    process.execPath,
+    [join(__dirname, "verify-partay-login.js"), "--help"],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /--private-account-file/);
+  assert.match(result.stdout, /deferred and excluded from the MVP/);
+  assert.equal(result.stderr, "");
+});
 
 function fixture() {
   const references = reviewDataReferences(
