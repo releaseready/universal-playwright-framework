@@ -2,12 +2,21 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { Server } from "node:http";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { test, mock } from "node:test";
 import { chromium } from "@playwright/test";
 import * as engine from "../src/execution";
 import { executeAdapter, type AdapterResult } from "../src/adapter/v1";
 import { examples } from "../features/adapter/examples";
 import rejectedExample from "../fixtures/adapter/v1-rejected.json";
+
+test("validation and execution use the same approved step matcher", () => {
+  const runnerRequire = createRequire(require.resolve("@cucumber/cucumber"));
+  assert.equal(
+    runnerRequire.resolve("@cucumber/cucumber-expressions"),
+    require.resolve("@cucumber/cucumber-expressions"),
+  );
+});
 
 function accepted(result: AdapterResult) {
   assert.equal(result.accepted, true);

@@ -77,7 +77,7 @@
   },
   "dependencies": {
     "@cucumber/cucumber": "12.9.0",
-    "@cucumber/cucumber-expressions": "18.0.1",
+    "@cucumber/cucumber-expressions": "19.0.0",
     "@cucumber/gherkin": "38.0.0",
     "@playwright/test": "1.55.1",
     "dotenv": "^16.3.0",

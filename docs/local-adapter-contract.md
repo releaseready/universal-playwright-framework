@@ -165,11 +165,12 @@ JSON examples together. The installed smoke also modifies a packaged worker and
 proves that the same call subsequently rejects stale approval.
 
 Playwright remains pinned to 1.55.1. The runtime remediation uses official
-Cucumber 12.9.0 and Gherkin 38.0.0, removing the affected nested UUID chain and
+Cucumber 12.9.0, Gherkin 38.0.0 and cucumber-expressions 19.0.0, removing the affected nested UUID chain and
 resolving maintained glob/minimatch dependencies without overrides. Cucumber
 12.3.0 was evaluated but retained the UUID advisory through Gherkin utilities.
 Unused `faker` was removed; the installed consumer checks the existing public
-`TestDataFactory` and root adapter export. No public export was removed.
+`TestDataFactory` and root adapter export. No public export was removed. Validation and execution resolve the same step
+matcher; both the source and independently installed consumer assert this.
 
 The package requires Node 22.12 or later in the Node 22 line, or Node 24 or later;
 validation uses Node 22.23.4. The production-only audit is clean for this
@@ -277,3 +278,23 @@ tested package, not a future documentation-inclusive tarball. Validation logs
 are `/tmp/web17-final-*.log`, `/tmp/web17-root-*.log` and
 `/tmp/web17-final-audit.json`. The original failed scenario remains recorded in
 the aggregate log. No hosted workflows or Copilot tasks were run for this repair.
+
+### Matcher alignment follow-up
+
+Gitar identified that validation used cucumber-expressions 18.0.1 while Cucumber
+12.9.0 used a nested 19.0.0. A focused resolution regression reproduced this
+mismatch, then passed after pinning 19.0.0 directly and updating the reviewed
+implementation pin and examples. The installed consumer also verifies that both
+resolve the same matcher, without relying on the source checkout.
+
+After this shared matcher change, the full clean-install/build/regression batch
+passed: **47 Node tests, 41 Cucumber scenarios and 117 steps**, with no failures
+or skips. Formatting and whitespace checks passed. Source and installed-consumer
+production audits each reported zero advisories; the 12 development-tooling
+advisories remain disclosed above. Logs are `/tmp/web17-matcher-final-*`;
+red/green evidence is `/tmp/web17-matcher-red.log` and
+`/tmp/web17-matcher-green.log`.
+
+The tested consumer tarball digest is
+`34895e0199306520d3b05dfe3cd0bf1f322a4d6803b3400c46fbfff1b6af4fff`.
+This evidence paragraph is a subsequent documentation-only addition.

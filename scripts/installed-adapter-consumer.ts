@@ -35,6 +35,13 @@ async function main(): Promise<void> {
       ),
     );
   }
+  const runnerRequire = createRequire(
+    requireFromConsumer.resolve("@cucumber/cucumber"),
+  );
+  assert.equal(
+    runnerRequire.resolve("@cucumber/cucumber-expressions"),
+    requireFromConsumer.resolve("@cucumber/cucumber-expressions"),
+  );
   const framework = requireFromConsumer("@universal/playwright-framework") as {
     executeAdapter: typeof executeAdapter;
     TestDataFactory: {
