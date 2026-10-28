@@ -35,6 +35,64 @@ async function main(): Promise<void> {
       ),
     );
   }
+  const dataExport = requireFromConsumer.resolve(
+    "@universal/playwright-framework/data-references/v1",
+  );
+  assert.ok(
+    realpathSync(dataExport).startsWith(
+      `${realpathSync(installedRoot)}${path.sep}`,
+    ),
+  );
+  const dataReferences = requireFromConsumer(
+    "@universal/playwright-framework/data-references/v1",
+  ) as typeof import("../src/input-preparation/data-references");
+  const catalogue = {
+    datasets: [{ id: "owned-demo", revision: "v1", rows: ["row-a", "row-b"] }],
+    secrets: [{ id: "synthetic-account", revision: "v1" }],
+  };
+  const selection = {
+    version: 1,
+    rows: ["row-a", "row-b"].map((rowId) => ({
+      scenarioId: `outline/${rowId}`,
+      dataset: { id: "owned-demo", revision: "v1" },
+      rowId,
+      secret: { id: "synthetic-account", revision: "v1" },
+    })),
+  };
+  const reviewed = dataReferences.reviewDataReferences(selection, catalogue);
+  assert.deepEqual(
+    reviewed.rows.map((row) => row.rowId),
+    ["row-a", "row-b"],
+  );
+  assert.deepEqual(
+    dataReferences.verifyDataReferenceBinding(
+      selection,
+      catalogue,
+      reviewed.binding,
+    ),
+    reviewed,
+  );
+  assert.throws(
+    () =>
+      dataReferences.reviewDataReferences(
+        { ...selection, secretValue: "SYNTHETIC_PRIVATE_VALUE_83" },
+        catalogue,
+      ),
+    { message: "Data references are missing, invalid or unapproved" },
+  );
+  catalogue.datasets[0].revision = "v2";
+  selection.rows.forEach((row) => {
+    row.dataset.revision = "v2";
+  });
+  assert.throws(
+    () =>
+      dataReferences.verifyDataReferenceBinding(
+        selection,
+        catalogue,
+        reviewed.binding,
+      ),
+    /Data reference review is stale/,
+  );
   const runnerRequire = createRequire(
     requireFromConsumer.resolve("@cucumber/cucumber"),
   );

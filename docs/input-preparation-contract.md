@@ -52,3 +52,73 @@ execution remain later runtime work.
 
 Run the focused checks with `npm run test:input-preparation`; the local
 `npm run test:features:regression` aggregate includes them.
+
+## Reviewed dataset associations (RRDWEB-3 / RRDSCRUM-70 handoff)
+
+`src/input-preparation/data-references.ts` supplies a separate, reference-only
+review seam. `reviewDataReferences(candidate, approvedCatalogue)` accepts:
+
+```json
+{
+  "version": 1,
+  "rows": [
+    {
+      "scenarioId": "approved-outline/row-a",
+      "dataset": { "id": "owned-demo", "revision": "v1" },
+      "rowId": "row-a",
+      "secret": { "id": "synthetic-account", "revision": "v1" }
+    }
+  ]
+}
+```
+
+The externally approved catalogue has `datasets: [{id, revision, rows}]` and
+`secrets: [{id, revision}]`. Secret references are optional for scenarios that do
+not use accounts. Each expanded scenario has one distinct scenario ID; row IDs
+are scoped to a dataset revision. Missing versions, unknown datasets/rows/secrets,
+duplicate scenario IDs and extra payload properties fail with constant safe errors.
+Neither API resolves fixtures or secrets, invokes browsers, or accepts secret values.
+The result contains only references and a SHA-256 `binding`, canonicalized by
+scenario ID. Input order does not change the binding. Changing a selected dataset,
+row, scenario or secret revision requires a new binding and review.
+
+Central integration must obtain the catalogue from its authorized data source,
+not the submitted draft. IDs must be opaque non-sensitive identifiers and revisions
+must be immutable: replacing contents under an existing revision violates this
+contract. Syntax checks cannot detect a secret deliberately disguised as an ID.
+A hash is not proof of approval. Persist the binding with trusted reviewer state
+and the existing feature/implementation review. Before binding or execution call
+`verifyDataReferenceBinding(candidate, currentApprovedCatalogue, savedBinding)`;
+reject stale/removed selections and invalidate the earlier review in central state.
+Also require the scenario IDs to exactly match the approved expanded selection.
+No server persistence or portal behavior is implemented by this Web change.
+
+After that check, an authorized resolver can map the selected non-sensitive rows
+into the existing `prepareScenarioInputs` document and reviewed field policy.
+Keep versioned secret associations out of Gherkin and fixture values; pass only
+opaque runtime references at the existing account boundary. Secret revision lookup,
+customer credentials, vault provisioning and runtime confidentiality remain outside
+this association API. Standalone Web callers may continue using the existing
+preparation API directly. This does not complete RRDSCRUM-70 or all RRDWEB-3 runtime ACs.
+
+Owned synthetic coverage is in `features/data-references.feature` and
+`scripts/data-references.test.ts`, included in `npm run test:input-preparation`.
+
+### Public package import
+
+Consumers use the explicit versioned export, including its TypeScript declarations:
+
+```typescript
+import {
+  reviewDataReferences,
+  verifyDataReferenceBinding,
+  type DataReferenceSelection,
+  type ApprovedDataCatalogue,
+} from "@universal/playwright-framework/data-references/v1";
+```
+
+Do not import internal `dist` paths: the package exports map intentionally limits
+public entry points. This entry forwards directly to the reference contract above;
+it does not execute scenarios or grant approval. The installed-package regression
+checks this import, distinct rows, safe rejection, and stale bindings outside the
+checkout alongside the existing owned synthetic adapter pilot.

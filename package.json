@@ -12,6 +12,10 @@
     "./adapter/v1": {
       "types": "./dist/cucumber/src/adapter/v1.d.ts",
       "default": "./dist/cucumber/src/adapter/v1.js"
+    },
+    "./data-references/v1": {
+      "types": "./dist/cucumber/src/input-preparation/data-references.d.ts",
+      "default": "./dist/cucumber/src/input-preparation/data-references.js"
     }
   },
   "scripts": {
@@ -26,7 +30,7 @@
     "test:mobile": "playwright test --project=mobile-chrome",
     "test:parallel": "playwright test --workers=4",
     "build:cucumber": "tsc --project tsconfig.cucumber.json",
-    "test:input-preparation": "npm run build:cucumber && cucumber-js --config cucumber-input-preparation.json",
+    "test:input-preparation": "npm run build:cucumber && cucumber-js --config cucumber-input-preparation.json && node --test dist/cucumber/scripts/data-references.test.js",
     "test:validation": "npm run build:cucumber && node --test dist/cucumber/scripts/feature-validation.test.js",
     "test:features": "npm run build:cucumber && cucumber-js --config cucumber.json",
     "test:execution": "npm run build:cucumber && node --test dist/cucumber/scripts/execution-adapter.test.js && cucumber-js --config cucumber-retry-regression.json",
@@ -94,7 +98,8 @@
     "tsconfig.json",
     "tsconfig.cucumber.json",
     "docs/local-adapter-contract.md",
-    "README.md"
+    "README.md",
+    "docs/input-preparation-contract.md"
   ],
   "publishConfig": {
     "access": "public"
