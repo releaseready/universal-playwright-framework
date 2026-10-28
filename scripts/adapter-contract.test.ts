@@ -9,6 +9,14 @@ import * as engine from "../src/execution";
 import { executeAdapter, type AdapterResult } from "../src/adapter/v1";
 import { examples } from "../features/adapter/examples";
 import rejectedExample from "../fixtures/adapter/v1-rejected.json";
+import { installedPackageSmoke } from "./installed-adapter-smoke";
+
+test("the installed package executes from an independent consumer", async () => {
+  const result = await installedPackageSmoke();
+  assert.equal(result.accepted, true);
+  if (!result.accepted) throw new Error("Expected installed adapter execution");
+  assert.equal(result.report.status, "passed");
+});
 
 test("validation and execution use the same approved step matcher", () => {
   const runnerRequire = createRequire(require.resolve("@cucumber/cucumber"));
