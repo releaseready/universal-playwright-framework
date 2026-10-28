@@ -87,19 +87,64 @@ not the submitted draft. IDs must be opaque non-sensitive identifiers and revisi
 must be immutable: replacing contents under an existing revision violates this
 contract. Syntax checks cannot detect a secret deliberately disguised as an ID.
 A hash is not proof of approval. Persist the binding with trusted reviewer state
-and the existing feature/implementation review. Before binding or execution call
-`verifyDataReferenceBinding(candidate, currentApprovedCatalogue, savedBinding)`;
-reject stale/removed selections and invalidate the earlier review in central state.
-Also require the scenario IDs to exactly match the approved expanded selection.
-No server persistence or portal behavior is implemented by this Web change.
+and the existing feature/implementation review.
 
-After that check, an authorized resolver can map the selected non-sensitive rows
-into the existing `prepareScenarioInputs` document and reviewed field policy.
-Keep versioned secret associations out of Gherkin and fixture values; pass only
-opaque runtime references at the existing account boundary. Secret revision lookup,
-customer credentials, vault provisioning and runtime confidentiality remain outside
-this association API. Standalone Web callers may continue using the existing
-preparation API directly. This does not complete RRDSCRUM-70 or all RRDWEB-3 runtime ACs.
+`prepareScenarioInputs` can perform this check as part of input preparation by
+receiving a `ReviewedDataReferenceInput` as its sixth argument (after selection
+filters). This keeps legacy callers unchanged; callers preparing selected data
+must supply the review context rather than relying on the legacy path:
+
+```typescript
+prepareScenarioInputs(
+  inputJson,
+  validation,
+  approval,
+  reviewedFixturePolicy,
+  { scenarioIds: ["approved-outline/row-a"] },
+  {
+    selection,
+    approvedCatalogue: currentApprovedCatalogue,
+    binding: savedBinding,
+    approvedEnvironment: {
+      id: "synthetic-review",
+      revision: "environment-1",
+      approvedOrigin: "https://synthetic.example.test",
+    },
+  },
+);
+```
+
+In this mode, preparation re-verifies the selection against the current
+catalogue and saved binding, requires the reference scenario IDs to exactly
+match the runnable selection, and requires each fixture scenario's
+`dataReference` (`dataset` ID/revision and `rowId`) to match the reviewed
+association. A selected secret, when present, stays a versioned reference and
+must match the fixture row's reference; no value is resolved. The supplied
+approved environment ID/revision and normalized origin must match the
+environment in the input document. Preparation rejects stale bindings, missing
+or mismatched rows, and environment mismatches with constant, non-sensitive
+errors before it returns a descriptor. The descriptor preserves the verified
+binding and safe row references alongside each prepared scenario; this step does
+not launch a browser or resolve dataset contents.
+
+The approved catalogue and environment must come from the caller's authority,
+not the submitted fixture. No server persistence or portal behavior is
+implemented by this Web change.
+
+The synthetic execution review includes both the source and emitted
+data-reference validator in its implementation fingerprint. Preparation changes
+require refreshing that existing review pin; changes to the validator invalidate
+the pin before execution acquires resources.
+
+An authorized resolver remains responsible for mapping selected non-sensitive
+row contents into the `prepareScenarioInputs` document and reviewed field policy,
+and for annotating each scenario with its matching `dataReference`. Keep
+versioned secret associations out of Gherkin and fixture values; pass only
+opaque runtime references at the existing account boundary. Secret resolution,
+customer credentials, vault provisioning and runtime confidentiality remain
+outside this association API. Standalone Web callers may continue using the
+existing preparation API directly. This does not complete RRDSCRUM-70 or all
+RRDWEB-3 runtime ACs.
 
 Owned synthetic coverage is in `features/data-references.feature` and
 `scripts/data-references.test.ts`, included in `npm run test:input-preparation`.
