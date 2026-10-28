@@ -2,9 +2,9 @@
 
 [Jira RRDWEB-6](https://noisegatemusicstudios.atlassian.net/browse/RRDWEB-6) /
 [issue 16](https://github.com/releaseready/universal-playwright-framework/issues/16).
-This incremental change depends on [reviewed PR15](https://github.com/releaseready/universal-playwright-framework/pull/15),
-base `copilot/rrdweb-5-bounded-reporting-adapter`, exact head
-`192c7a0da689483e2a3c800d0f1def975dfb520b`.
+[PR15](https://github.com/releaseready/universal-playwright-framework/pull/15)
+is merged. PR17 now targets `main`, verified at
+`e99be5ca53d8eae7eb6b9ff48b25f82eb700b381`, which includes that reporting work.
 Execution, input preparation, approval, and reporting are inherited. New work is
 the versioned local boundary, package wiring, and its contract/acceptance tests.
 There is no new engine, remote protocol, account service, database, or deployment.
