@@ -10,6 +10,7 @@ import {
   type RuntimeLoginAccount,
   type RuntimeLoginRequest,
   type RuntimeLoginResult,
+  type RuntimeLoginFailureReport,
 } from "../input-preparation/runtime-login";
 import { withOperatorLoginInputs } from "../input-preparation/operator-prompt";
 import { PrivateFileLoginDeferredError } from "../input-preparation/private-login-file";
@@ -76,18 +77,26 @@ async function withSafeFailure(
   } catch (error) {
     throw (
       RuntimeLoginFailure.fromUnknown(error) ??
-      new RuntimeLoginFailure("input-validation", "not-acquired")
+      new RuntimeLoginFailure(
+        "input-validation",
+        "not-acquired",
+        undefined,
+        "input",
+      )
     );
   }
 }
 
-export function partayLoginFailureReport(error: unknown) {
+export function partayLoginFailureReport(
+  error: unknown,
+): RuntimeLoginFailureReport {
   const safe =
     RuntimeLoginFailure.fromUnknown(error) ??
     new RuntimeLoginFailure("unclassified", "unconfirmed");
   return {
     status: "not-verified" as const,
     failureStage: safe.failureStage,
+    failureClassification: safe.failureClassification,
     cleanupStatus: safe.cleanupStatus,
     ...(safe.policyReason ? { policyReason: safe.policyReason } : {}),
     automaticRetryAttempted: false as const,
@@ -141,7 +150,16 @@ function loginConsumer(
         setStage("brand-visible");
         await expect(logo).toBeVisible();
         setStage("brand-text");
-        expect(await logo.innerText()).toBe("Partay");
+        // Separate reading from comparison: a failed/unfinished read is operational.
+        const brandText = await logo.innerText();
+        if (brandText !== "Partay") {
+          throw new RuntimeLoginFailure(
+            "brand-text",
+            "unconfirmed",
+            undefined,
+            "assertion-failed",
+          );
+        }
         setStage("request-policy");
         assertRequestsAllowed();
       },

@@ -23,6 +23,7 @@ import {
   RuntimeLoginError,
   RuntimeLoginFailure,
   RUNTIME_LOGIN_FAILURE_STAGES,
+  RUNTIME_LOGIN_FAILURE_CLASSIFICATIONS,
   RUNTIME_LOGIN_CLEANUP_STATUSES,
   RUNTIME_LOGIN_POLICY_REASONS,
   consumeRuntimeLoginInputs,
@@ -403,7 +404,11 @@ function assertFailure(
   policyReason?: RuntimeLoginFailure["policyReason"],
 ): boolean {
   assertSafe(error);
-  assert.deepEqual(partayLoginFailureReport(error), {
+  const { failureClassification, ...report } = partayLoginFailureReport(error);
+  assert.ok(
+    RUNTIME_LOGIN_FAILURE_CLASSIFICATIONS.includes(failureClassification),
+  );
+  assert.deepEqual(report, {
     status: "not-verified",
     failureStage,
     cleanupStatus,
@@ -425,6 +430,7 @@ test("failure reports allowlist both dimensions and never serialize arbitrary er
       assert.deepEqual(partayLoginFailureReport(error), {
         status: "not-verified",
         failureStage: stage,
+        failureClassification: "unknown",
         cleanupStatus: status,
         automaticRetryAttempted: false,
       });
@@ -439,6 +445,7 @@ test("failure reports allowlist both dimensions and never serialize arbitrary er
     assert.deepEqual(partayLoginFailureReport(value), {
       status: "not-verified",
       failureStage: "unclassified",
+      failureClassification: "unknown",
       cleanupStatus: "unconfirmed",
       automaticRetryAttempted: false,
     });
@@ -497,7 +504,12 @@ test("policy reason accepts only primitive allowlisted values and ignores poison
     "confirmed",
     "off-origin",
   );
-  for (const key of ["failureStage", "cleanupStatus", "policyReason"]) {
+  for (const key of [
+    "failureStage",
+    "cleanupStatus",
+    "policyReason",
+    "failureClassification",
+  ]) {
     Object.defineProperty(accessor, key, {
       get() {
         invoked += 1;
@@ -768,6 +780,7 @@ test("CLI input failures emit only safe structured metadata and no success recei
     assert.deepEqual(JSON.parse(result.stderr), {
       status: "not-verified",
       failureStage: "input-validation",
+      failureClassification: "unknown",
       cleanupStatus: "not-acquired",
       automaticRetryAttempted: false,
     });
@@ -878,7 +891,7 @@ for (const mode of [
           "wrong-url": "final-url",
           "wrong-logo": "brand-text",
           "hidden-logo": "brand-visible",
-          redirect: "final-url",
+          redirect: "request-policy",
           "missing-form": "form-visible",
           "missing-username": "username-fill",
           "missing-password": "password-fill",
@@ -1418,4 +1431,227 @@ test("cleanup errors cannot turn a completed login into success or expose secret
   assert.equal(owned.contextClosed, true);
   assert.equal(owned.browserClosed, true);
   await assertDisposed(provider, request);
+});
+
+test("Given legacy or raw assertion-shaped errors, when reported, then evidence stays unknown", () => {
+  for (const error of [
+    new Error("AssertionError: expected Partay"),
+    new RuntimeLoginFailure("brand-text", "confirmed"),
+    { failureStage: "brand-text", failureClassification: "assertion-failed" },
+  ]) {
+    assert.equal(
+      partayLoginFailureReport(error).failureClassification,
+      "unknown",
+    );
+  }
+});
+
+test("Given a completed value mismatch, when cleanup finishes, then it is assertion evidence only", async () => {
+  const { descriptor, request, provider } = fixture();
+  await assert.rejects(
+    verifyPartayLogin(
+      descriptor,
+      request,
+      provider,
+      ownedBrowser("wrong-logo"),
+    ),
+    (error) => {
+      const report = partayLoginFailureReport(error);
+      assert.equal(report.failureClassification, "assertion-failed");
+      assert.equal(report.failureStage, "brand-text");
+      assert.equal(report.cleanupStatus, "confirmed");
+      assert.equal(report.status, "not-verified");
+      return true;
+    },
+  );
+});
+
+for (const outcome of [
+  "assertion",
+  "raw-error",
+  "navigation",
+  "cancel",
+  "timeout",
+  "policy-before-error",
+  "policy-during-cleanup",
+  "pending-transport",
+  "cleanup-failure",
+] as const) {
+  test(`Given ${outcome}, when login evidence is finalized, then only a completed comparison is classified as an assertion`, async () => {
+    const controller = new AbortController();
+    let requestHandler: (route: Route) => Promise<void> = async () => undefined;
+    let closes = 0;
+    const blockedRequest = (): Promise<void> =>
+      requestHandler({
+        request: () => ({
+          url: () => "https://blocked.invalid/",
+          isNavigationRequest: () => false,
+        }),
+        abort: async () => undefined,
+      } as unknown as Route);
+    const context = {
+      routeWebSocket: async () => undefined,
+      route: async (_pattern: string, handler: typeof requestHandler) => {
+        requestHandler = handler;
+      },
+      close: async () => {
+        closes += 1;
+        if (outcome === "policy-during-cleanup") await blockedRequest();
+        if (outcome === "cleanup-failure") throw new Error(canary.password);
+      },
+      newPage: async () => ({
+        context: () => context,
+        setDefaultTimeout() {},
+        setDefaultNavigationTimeout() {},
+      }),
+    } as unknown as BrowserContext;
+    await assert.rejects(
+      withFreshLoginPage(
+        async (_page, setStage) => {
+          await guardLoginRequests(
+            context,
+            new URL(PARTAY_LOGIN_URL).origin,
+            PARTAY_LOGIN_URL,
+          );
+          setStage(outcome === "navigation" ? "navigation" : "brand-text");
+          if (outcome === "timeout") await new Promise<void>(() => undefined);
+          if (outcome === "cancel") controller.abort();
+          if (outcome === "policy-before-error") await blockedRequest();
+          if (outcome === "pending-transport") {
+            void requestHandler({
+              request: () => ({
+                url: () => PARTAY_LOGIN_URL,
+                isNavigationRequest: () => false,
+              }),
+              fetch: () => new Promise(() => undefined),
+            } as unknown as Route);
+          }
+          if (outcome === "raw-error" || outcome === "navigation")
+            throw new Error(canary.password);
+          throw new RuntimeLoginFailure(
+            "brand-text",
+            "unconfirmed",
+            undefined,
+            "assertion-failed",
+          );
+        },
+        {
+          timeoutMs: 50,
+          signal: controller.signal,
+          launchBrowser: async () =>
+            ({
+              newContext: async () => context,
+              close: async () => {
+                closes += 1;
+              },
+            }) as unknown as Browser,
+        },
+      ),
+      (error) => {
+        assertSafe(error);
+        const report = partayLoginFailureReport(error);
+        const expected = {
+          assertion: "assertion-failed",
+          "raw-error": "operational",
+          navigation: "navigation",
+          cancel: "interrupted",
+          timeout: "timed-out",
+          "policy-before-error": "request-policy",
+          "policy-during-cleanup": "request-policy",
+          "pending-transport": "request-policy",
+          "cleanup-failure": "assertion-failed",
+        };
+        assert.equal(report.failureClassification, expected[outcome]);
+        assert.equal(
+          report.cleanupStatus,
+          outcome === "cleanup-failure" ? "unconfirmed" : "confirmed",
+        );
+        if (outcome.startsWith("policy")) {
+          assert.equal(report.failureStage, "request-policy");
+          assert.equal(report.policyReason, "off-origin");
+        }
+        return true;
+      },
+    );
+    assert.equal(closes, 2);
+  });
+}
+
+test("Given failed input disposal after an assertion, then evidence is operational with browser cleanup separate", async () => {
+  const { descriptor, request, provider } = fixture();
+  await assert.rejects(
+    consumeRuntimeLoginInputs(
+      descriptor,
+      request,
+      {
+        resolve: provider.resolve.bind(provider),
+        dispose() {
+          provider.dispose();
+          throw new Error(canary.password);
+        },
+      },
+      async () => {
+        throw new RuntimeLoginFailure(
+          "brand-text",
+          "confirmed",
+          undefined,
+          "assertion-failed",
+        );
+      },
+    ),
+    (error) => {
+      assertSafe(error);
+      assert.equal(
+        partayLoginFailureReport(error).failureClassification,
+        "operational",
+      );
+      assert.equal(partayLoginFailureReport(error).cleanupStatus, "confirmed");
+      return true;
+    },
+  );
+});
+
+test("Given invalid or accessor classification, then the report never promotes it to assertion evidence", () => {
+  for (const value of [
+    canary.password,
+    new String("assertion-failed"),
+    { toString: () => "assertion-failed" },
+  ]) {
+    const error = new RuntimeLoginFailure(
+      "brand-text",
+      "confirmed",
+      undefined,
+      value,
+    );
+    assert.equal(
+      partayLoginFailureReport(error).failureClassification,
+      "unknown",
+    );
+  }
+  const error = new RuntimeLoginFailure(
+    "brand-text",
+    "confirmed",
+    undefined,
+    "assertion-failed",
+  );
+  Object.defineProperty(error, "failureClassification", {
+    get() {
+      throw new Error(canary.password);
+    },
+  });
+  assert.equal(
+    partayLoginFailureReport(error).failureClassification,
+    "unknown",
+  );
+  assert.equal(
+    partayLoginFailureReport(
+      new RuntimeLoginFailure(
+        "navigation",
+        "confirmed",
+        undefined,
+        "assertion-failed",
+      ),
+    ).failureClassification,
+    "unknown",
+  );
 });

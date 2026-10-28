@@ -110,6 +110,7 @@ stderr and exits nonzero, never a successful receipt:
   "status": "not-verified",
   "failureStage": "navigation",
   "cleanupStatus": "confirmed",
+  "failureClassification": "unknown",
   "automaticRetryAttempted": false
 }
 ```
@@ -127,12 +128,13 @@ diagnostic metadata). No exception text, cause, request contents, paths or
 arbitrary supplied strings are included. `partayLoginFailureReport` reconstructs
 only allowlisted values and returns no account/scope data.
 
-When the final request-policy check fails, `policyReason` contains only the
+When request-policy verification fails, `policyReason` contains only the
 first observed category: `off-origin`, `document-destination`, `http-redirect`,
 `websocket`, or `transport-error`. Unknown values are omitted. No destination,
 request contents, response body or exception text is included. This is diagnostic
-metadata, not permission to relax the guard. If an earlier operation fails
-before the final policy check, the reason may be absent.
+metadata, not permission to relax the guard. The guard is checked after work and cleanup even if an earlier assertion failed.
+Any recorded blocked request takes precedence over assertion evidence. Unsettled
+transport at finalization is conservatively reported as `transport-error`.
 
 The stage is set immediately before each operation; it is not a diagnosis of
 credential rejection or proof the server received a submission. A `submit-click`
@@ -140,6 +142,34 @@ failure can occur before or after a click was dispatched. An `overlay-dismissal`
 failure means dismissal was not verified, not necessarily that authentication
 failed. Request-policy failure can include blocked redirects, off-origin traffic
 or transport errors; no destinations or response bodies are reported.
+
+### Evidence for manual defect review
+
+`partayLoginFailureReport` now returns an additive `failureClassification` field:
+`assertion-failed`, `input`, `navigation`, `request-policy`, `interrupted`,
+`timed-out`, `operational`, or `unknown`. The root package exports
+`RuntimeLoginFailureReport`, `RuntimeLoginFailureClassification`, and
+`RUNTIME_LOGIN_FAILURE_CLASSIFICATIONS`. Older errors constructed without this
+metadata, arbitrary exceptions, and invalid metadata produce `unknown`; never
+infer classification from `failureStage` or exception text.
+
+Only the completed `brand-text` comparison against the fixed expected value
+`Partay` currently emits `assertion-failed`. A failed text read, unfinished
+polling assertion, browser error, interruption, or deadline cannot produce that
+classification. Polling matcher failures without a typed timeout or run deadline
+are conservatively `operational`. No observed page text is retained. A request
+policy violation overrides assertion evidence, including one observed during
+cleanup. Failed secret-provider disposal downgrades assertion evidence to
+`operational` while preserving the separate browser cleanup status.
+
+Central may offer a **manual review candidate** only for a trusted run with
+`failureClassification: "assertion-failed"`, `failureStage: "brand-text"`,
+`cleanupStatus: "confirmed"`, and no `policyReason`. Missing/unknown evidence,
+other classifications, and unconfirmed cleanup are ineligible. This is an
+in-process contract, not authentication: central must bind the result to its
+trusted run and reviewed SDK revision, and must not accept a caller's fabricated
+report. No classification confirms a product bug or creates a defect. A human
+must review the evidence and follow the defect template before creating one.
 
 The operator-reported attempt on revision `59664fe` returned
 `submission-assertion` / `confirmed` with no automatic retry. Its login remains
