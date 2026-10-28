@@ -12,7 +12,7 @@ import {
   type RuntimeLoginResult,
 } from "../input-preparation/runtime-login";
 import { withOperatorLoginInputs } from "../input-preparation/operator-prompt";
-import { withPrivateFileLoginInputs } from "../input-preparation/private-login-file";
+import { PrivateFileLoginDeferredError } from "../input-preparation/private-login-file";
 import {
   withFreshLoginPage,
   guardLoginRequests,
@@ -60,16 +60,12 @@ export async function privateFileAndVerifyPartayLogin(
   repositoryRoot: string,
   options: RuntimeLoginBrowserOptions = {},
 ): Promise<RuntimeLoginResult> {
-  return withSafeFailure(() => {
-    validateTarget(descriptor, request);
-    return withPrivateFileLoginInputs(
-      descriptor,
-      request,
-      filePath,
-      repositoryRoot,
-      loginConsumer(descriptor, request, options),
-    );
-  });
+  void descriptor;
+  void request;
+  void filePath;
+  void repositoryRoot;
+  void options;
+  throw new PrivateFileLoginDeferredError();
 }
 
 async function withSafeFailure(

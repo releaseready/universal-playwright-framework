@@ -90,10 +90,11 @@ From a private interactive terminal, using a supported Node version:
 npm run verify:partay-login -- /path/to/approved-descriptor.json /path/to/approved-request.json
 ```
 
-Only reference-file paths are arguments. The existing non-echo TTY prompt
-collects both account fields in memory. There is no automatic environment-variable, credential-argument, pipe or chat
-fallback. The separately approved opt-in local-file path below is not used by
-the default TTY invocation. SIGINT/SIGTERM request cancellation,
+Only reference-file paths are accepted. The existing non-echo TTY prompt
+collects both account fields in memory. There is no environment-variable,
+credential-argument, pipe, chat or file fallback. `--private-account-file` is
+rejected with a fixed message before reference files or the supplied credential
+path are read. Run with `--help` for usage. SIGINT/SIGTERM request cancellation,
 and cleanup is awaited before returning. Do not capture terminal input or enable
 debug recording. A rejected login is not retried; stop and have the operator
 review the account/permission before any subsequent run.
@@ -170,40 +171,16 @@ The shared browser displayed in an editor is not reused for credential entry.
 
 ## Local checks and retained handover evidence
 
-### Separately approved private-file input
+### Deferred private-account-file input
 
-This is an explicit change from runtime-only credential collection. It requires
-separate review and authorization before customer use. It does not authorize
-reuse of any consumed run or another live attempt.
-
-The CLI accepts an optional `--private-account-file /absolute/path/account.json`
-after the two reference-file arguments. Only the path is an argument, never the
-account values. File contents must be a strict JSON object with exactly
-`username` and `password`, supplied locally by the authorized operator. Do not
-commit the file or create it inside the repository.
-
-On supported POSIX systems the file must be a regular, non-symlink, single-link,
-current-user-owned file with mode `0600`, at most 8 KiB, in a current-user-owned
-directory with mode `0700`. Its resolved location must be outside the current
-Git repository. Windows is rejected rather than relying on POSIX permission
-checks. The repository boundary comes from the CLI's current Git worktree,
-not the submitted descriptor.
-
-After preflight and file-security checks, the directory entry is unlinked
-**before parsing and before browser startup**. Unlink or close failure prevents
-browser acquisition. Validated values are passed through the existing scoped
-in-memory provider and consumer, with disposal on every exit. The temporary
-read buffer is cleared. A second invocation cannot reuse the removed file.
-No contents, paths or raw filesystem errors appear in the result.
-
-An untrusted/insecure file or invalid reference preflight is rejected without
-deleting the file: the runner does not delete a path it could not validate.
-The operator must remove rejected files explicitly. Parsed-invalid files that
-passed security checks have already been unlinked. File removal is not secure
-disk erasure: filesystem snapshots/backups, editor history and previously
-retained copies are outside this helper's guarantees. Browser `cleanupStatus`
-still describes browser/context closure, not secure disk erasure or server
-session revocation. No actual customer credential file is provided by this PR.
+Private-account-file input is deferred and excluded from the MVP. The CLI
+rejects `--private-account-file` before reading the descriptor/request files or
+accessing the supplied credential path. The direct file-consumption helpers
+also reject with the same fixed message before file access, runtime secret
+acquisition, consumer invocation or browser startup. The supplied path and
+contents are not echoed or changed. The default non-echo TTY prompt and ordinary
+runtime provider remain available; this deferral does not change public
+data-reference or runtime-provider APIs.
 
 `npm run test:customer-login` compiles and runs owned Chromium fixtures.
 Customer-URL fixtures remap only the guarded transport to owned loopback HTTP
