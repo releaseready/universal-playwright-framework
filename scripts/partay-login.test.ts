@@ -5,7 +5,14 @@ import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { chromium, type Browser, type Page } from "@playwright/test";
+import {
+  chromium,
+  type Browser,
+  type BrowserContext,
+  type Page,
+  type Route,
+  type WebSocketRoute,
+} from "@playwright/test";
 import type {
   PreparedInputDescriptor,
   RuntimeSecretProvider,
@@ -17,6 +24,7 @@ import {
   RuntimeLoginFailure,
   RUNTIME_LOGIN_FAILURE_STAGES,
   RUNTIME_LOGIN_CLEANUP_STATUSES,
+  RUNTIME_LOGIN_POLICY_REASONS,
   consumeRuntimeLoginInputs,
   type RuntimeLoginRequest,
 } from "../src/input-preparation/runtime-login";
@@ -262,12 +270,14 @@ function assertFailure(
   error: unknown,
   failureStage: RuntimeLoginFailure["failureStage"],
   cleanupStatus: RuntimeLoginFailure["cleanupStatus"],
+  policyReason?: RuntimeLoginFailure["policyReason"],
 ): boolean {
   assertSafe(error);
   assert.deepEqual(partayLoginFailureReport(error), {
     status: "not-verified",
     failureStage,
     cleanupStatus,
+    ...(policyReason ? { policyReason } : {}),
     automaticRetryAttempted: false,
   });
   return true;
@@ -314,6 +324,236 @@ test("failure reports allowlist both dimensions and never serialize arbitrary er
     );
   }
 });
+
+test("policy reason accepts only primitive allowlisted values and ignores poisoned accessors", () => {
+  let invoked = 0;
+  const poison = {
+    toString() {
+      invoked += 1;
+      throw new Error(canary.password);
+    },
+    toJSON() {
+      invoked += 1;
+      return canary.password;
+    },
+  };
+  for (const value of [
+    canary.password,
+    `http-redirect ${canary.username}`,
+    "https://owned.invalid/private",
+    ["off-origin"],
+    poison,
+    new String("websocket"),
+    null,
+    undefined,
+  ]) {
+    assertFailure(
+      new RuntimeLoginFailure("request-policy", "confirmed", value),
+      "request-policy",
+      "confirmed",
+    );
+    const poisoned = Object.assign(
+      new RuntimeLoginFailure("request-policy", "confirmed"),
+      { policyReason: value, cause: new Error(canary.password) },
+    );
+    assertFailure(
+      RuntimeLoginFailure.fromUnknown(poisoned),
+      "request-policy",
+      "confirmed",
+    );
+  }
+  const accessor = new RuntimeLoginFailure(
+    "request-policy",
+    "confirmed",
+    "off-origin",
+  );
+  for (const key of ["failureStage", "cleanupStatus", "policyReason"]) {
+    Object.defineProperty(accessor, key, {
+      get() {
+        invoked += 1;
+        throw new Error(canary.password);
+      },
+    });
+  }
+  assert.deepEqual(
+    partayLoginFailureReport(accessor),
+    partayLoginFailureReport(undefined),
+  );
+  const proxy = new Proxy(accessor, {
+    getOwnPropertyDescriptor() {
+      throw new Error(canary.password);
+    },
+  });
+  assert.deepEqual(
+    partayLoginFailureReport(proxy),
+    partayLoginFailureReport(undefined),
+  );
+  const revoked = Proxy.revocable({}, {});
+  revoked.revoke();
+  assert.deepEqual(
+    partayLoginFailureReport(revoked.proxy),
+    partayLoginFailureReport(undefined),
+  );
+  assert.equal(invoked, 0);
+});
+
+for (const reason of RUNTIME_LOGIN_POLICY_REASONS) {
+  test(`offline ${reason} propagates through guard, cleanup, input disposal and CLI without raw data`, async () => {
+    const { descriptor, request, provider } = fixture();
+    let handleRequest!: (route: Route) => Promise<void>;
+    let handleSocket!: (socket: WebSocketRoute) => void;
+    let fetched = 0;
+    let aborted = 0;
+    let disposed = 0;
+    let socketClosed = 0;
+    const context = {
+      route: async (_pattern: string, handler: typeof handleRequest) => {
+        handleRequest = handler;
+      },
+      routeWebSocket: async (
+        _pattern: string,
+        handler: typeof handleSocket,
+      ) => {
+        handleSocket = handler;
+      },
+    } as unknown as BrowserContext;
+    const login = "http://127.0.0.1:1/";
+    const assertAllowed = await guardLoginRequests(
+      context,
+      new URL(login).origin,
+      login,
+    );
+    const route = {
+      request: () => ({
+        url: () =>
+          reason === "off-origin"
+            ? `http://127.0.0.1:2/${canary.password}`
+            : reason === "document-destination"
+              ? `${login}${canary.password}`
+              : login,
+        isNavigationRequest: () => true,
+      }),
+      abort: async () => {
+        aborted += 1;
+      },
+      fetch: async (options: unknown) => {
+        fetched += 1;
+        assert.deepEqual(options, { maxRedirects: 0 });
+        if (reason === "transport-error")
+          throw new Error(canary.password, { cause: canary.username });
+        return {
+          status: () => 302,
+          dispose: async () => {
+            disposed += 1;
+          },
+        };
+      },
+      fulfill: async () =>
+        assert.fail("Blocked response must not be fulfilled"),
+    } as unknown as Route;
+    if (reason === "websocket")
+      handleSocket({
+        close: () => {
+          socketClosed += 1;
+        },
+      } as unknown as WebSocketRoute);
+    else await handleRequest(route);
+    assert.equal(
+      fetched,
+      ["http-redirect", "transport-error"].includes(reason) ? 1 : 0,
+    );
+    assert.equal(disposed, reason === "http-redirect" ? 1 : 0);
+    assert.equal(aborted, reason === "websocket" ? 0 : 1);
+    assert.equal(socketClosed, reason === "websocket" ? 1 : 0);
+    // A later failure must not replace the first category.
+    await handleRequest({
+      ...route,
+      fetch: async () => {
+        throw new Error(canary.password);
+      },
+      request: () => ({ url: () => login, isNavigationRequest: () => false }),
+    } as unknown as Route);
+    let closes = 0;
+    let launches = 0;
+    await assert.rejects(
+      consumeRuntimeLoginInputs(
+        descriptor,
+        request,
+        {
+          resolve: provider.resolve.bind(provider),
+          dispose: () => {
+            provider.dispose();
+            throw new Error(canary.password);
+          },
+        },
+        async () =>
+          withFreshLoginPage(
+            async (_page, setStage) => {
+              setStage("request-policy");
+              assertAllowed();
+            },
+            {
+              launchBrowser: async () => {
+                launches += 1;
+                return {
+                  close: async () => {
+                    closes += 1;
+                  },
+                  newContext: async () => ({
+                    close: async () => {
+                      closes += 1;
+                    },
+                    newPage: async () => ({
+                      setDefaultTimeout() {},
+                      setDefaultNavigationTimeout() {},
+                    }),
+                  }),
+                } as unknown as Browser;
+              },
+            },
+          ),
+      ),
+      (error) => assertFailure(error, "request-policy", "confirmed", reason),
+    );
+    assert.equal(launches, 1);
+    assert.equal(closes, 2);
+    await assertDisposed(provider, request);
+
+    // Exercise the real CLI serializer with an in-process stub; no prompt,
+    // customer navigation, files, credentials or runtime request is needed.
+    const result = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        `
+      const runtime = require(${JSON.stringify(join(__dirname, "../src/input-preparation/runtime-login.js"))});
+      const partay = require(${JSON.stringify(join(__dirname, "../src/customer-login/partay.js"))});
+      const fs = require("node:fs");
+      const read = fs.readFileSync;
+      fs.readFileSync = (path, ...args) =>
+        path === "descriptor" || path === "request" ? "{}" : read(path, ...args);
+      process.argv = [process.execPath, "owned-cli", "descriptor", "request"];
+      partay.promptAndVerifyPartayLogin = async () => {
+        const error = new runtime.RuntimeLoginFailure("request-policy", "confirmed", ${JSON.stringify(reason)});
+        error.message = ${JSON.stringify(canary.password)};
+        error.cause = new Error(${JSON.stringify(canary.username)});
+        throw error;
+      };
+      require(${JSON.stringify(join(__dirname, "verify-partay-login.js"))});
+    `,
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.deepEqual(
+      JSON.parse(result.stderr),
+      partayLoginFailureReport(
+        new RuntimeLoginFailure("request-policy", "confirmed", reason),
+      ),
+    );
+  });
+}
 
 test("shared boundary reconstructs only safe metadata and disposes even when disposal throws", async () => {
   const { descriptor, request, provider } = fixture();

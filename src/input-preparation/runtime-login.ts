@@ -118,12 +118,27 @@ export const RUNTIME_LOGIN_CLEANUP_STATUSES = Object.freeze([
 export type RuntimeLoginCleanupStatus =
   (typeof RUNTIME_LOGIN_CLEANUP_STATUSES)[number];
 
+export const RUNTIME_LOGIN_POLICY_REASONS = Object.freeze([
+  "off-origin",
+  "document-destination",
+  "http-redirect",
+  "websocket",
+  "transport-error",
+] as const);
+export type RuntimeLoginPolicyReason =
+  (typeof RUNTIME_LOGIN_POLICY_REASONS)[number];
+
 /** Reconstruct only allowlisted metadata; never retain an exception or cause. */
 export class RuntimeLoginFailure extends RuntimeLoginError {
   readonly failureStage: RuntimeLoginFailureStage;
   readonly cleanupStatus: RuntimeLoginCleanupStatus;
+  readonly policyReason?: RuntimeLoginPolicyReason;
 
-  constructor(failureStage: unknown, cleanupStatus: unknown) {
+  constructor(
+    failureStage: unknown,
+    cleanupStatus: unknown,
+    policyReason?: unknown,
+  ) {
     super("runtime-login-failed");
     this.failureStage =
       RUNTIME_LOGIN_FAILURE_STAGES.find((stage) => stage === failureStage) ??
@@ -132,6 +147,25 @@ export class RuntimeLoginFailure extends RuntimeLoginError {
       RUNTIME_LOGIN_CLEANUP_STATUSES.find(
         (status) => status === cleanupStatus,
       ) ?? "unconfirmed";
+    this.policyReason = RUNTIME_LOGIN_POLICY_REASONS.find(
+      (reason) => reason === policyReason,
+    );
+  }
+
+  static fromUnknown(error: unknown): RuntimeLoginFailure | undefined {
+    try {
+      if (!(error instanceof RuntimeLoginFailure)) return undefined;
+      // Do not invoke poisoned accessors, coercions or serializers.
+      const value = (key: string): unknown =>
+        Object.getOwnPropertyDescriptor(error, key)?.value;
+      return new RuntimeLoginFailure(
+        value("failureStage"),
+        value("cleanupStatus"),
+        value("policyReason"),
+      );
+    } catch {
+      return undefined;
+    }
   }
 }
 
@@ -357,11 +391,9 @@ export async function consumeRuntimeLoginInputs(
         await consume(account);
       } catch (error) {
         // Never propagate a browser exception that may embed credentials.
-        if (error instanceof RuntimeLoginFailure) {
-          consumerFailure = new RuntimeLoginFailure(
-            error.failureStage,
-            error.cleanupStatus,
-          );
+        const safe = RuntimeLoginFailure.fromUnknown(error);
+        if (safe) {
+          consumerFailure = safe;
           throw consumerFailure;
         }
         return fail("runtime-login-failed");

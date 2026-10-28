@@ -125,6 +125,13 @@ diagnostic metadata). No exception text, cause, request contents, paths or
 arbitrary supplied strings are included. `partayLoginFailureReport` reconstructs
 only allowlisted values and returns no account/scope data.
 
+When the final request-policy check fails, `policyReason` contains only the
+first observed category: `off-origin`, `document-destination`, `http-redirect`,
+`websocket`, or `transport-error`. Unknown values are omitted. No destination,
+request contents, response body or exception text is included. This is diagnostic
+metadata, not permission to relax the guard. If an earlier operation fails
+before the final policy check, the reason may be absent.
+
 The stage is set immediately before each operation; it is not a diagnosis of
 credential rejection or proof the server received a submission. A `submit-click`
 failure can occur before or after a click was dispatched. An `overlay-dismissal`
