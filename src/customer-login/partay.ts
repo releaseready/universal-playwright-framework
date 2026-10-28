@@ -6,6 +6,7 @@ import type {
 import {
   consumeRuntimeLoginInputs,
   RuntimeLoginError,
+  RuntimeLoginFailure,
   type RuntimeLoginAccount,
   type RuntimeLoginRequest,
   type RuntimeLoginResult,
@@ -19,32 +20,61 @@ import {
 
 export const PARTAY_LOGIN_URL = "https://partay.staging.noutify.app/";
 
-export function verifyPartayLogin(
+export async function verifyPartayLogin(
   descriptor: PreparedInputDescriptor,
   request: RuntimeLoginRequest,
   provider: RuntimeSecretProvider,
   options: RuntimeLoginBrowserOptions = {},
 ): Promise<RuntimeLoginResult> {
-  return consumeRuntimeLoginInputs(
-    descriptor,
-    request,
-    provider,
-    loginConsumer(descriptor, request, options),
+  return withSafeFailure(() =>
+    consumeRuntimeLoginInputs(
+      descriptor,
+      request,
+      provider,
+      loginConsumer(descriptor, request, options),
+    ),
   );
 }
 
-export function promptAndVerifyPartayLogin(
+export async function promptAndVerifyPartayLogin(
   descriptor: PreparedInputDescriptor,
   request: RuntimeLoginRequest,
   options: RuntimeLoginBrowserOptions = {},
 ): Promise<RuntimeLoginResult> {
-  validateTarget(descriptor, request);
-  return withOperatorLoginInputs(
-    descriptor,
-    request,
-    loginConsumer(descriptor, request, options),
-    { signal: options.signal },
-  );
+  return withSafeFailure(() => {
+    validateTarget(descriptor, request);
+    return withOperatorLoginInputs(
+      descriptor,
+      request,
+      loginConsumer(descriptor, request, options),
+      { signal: options.signal },
+    );
+  });
+}
+
+async function withSafeFailure(
+  run: () => Promise<RuntimeLoginResult>,
+): Promise<RuntimeLoginResult> {
+  try {
+    return await run();
+  } catch (error) {
+    throw error instanceof RuntimeLoginFailure
+      ? new RuntimeLoginFailure(error.failureStage, error.cleanupStatus)
+      : new RuntimeLoginFailure("input-validation", "not-acquired");
+  }
+}
+
+export function partayLoginFailureReport(error: unknown) {
+  const safe =
+    error instanceof RuntimeLoginFailure
+      ? new RuntimeLoginFailure(error.failureStage, error.cleanupStatus)
+      : new RuntimeLoginFailure("unclassified", "unconfirmed");
+  return {
+    status: "not-verified" as const,
+    failureStage: safe.failureStage,
+    cleanupStatus: safe.cleanupStatus,
+    automaticRetryAttempted: false as const,
+  };
 }
 
 function validateTarget(
@@ -68,7 +98,8 @@ function loginConsumer(
   return async (account) => {
     validateTarget(descriptor, request);
     await withFreshLoginPage(
-      async (page) => {
+      async (page, setStage) => {
+        setStage("navigation");
         const assertRequestsAllowed = await guardLoginRequests(
           page.context(),
           request.scope.environment.approvedOrigin,
@@ -76,6 +107,7 @@ function loginConsumer(
         );
         await page.goto(PARTAY_LOGIN_URL);
         await expect(page).toHaveURL(PARTAY_LOGIN_URL);
+        setStage("submission-assertion");
         const overlay = page.locator("#overlay");
         await expect(overlay).toBeVisible();
         await overlay.locator("#username").fill(account.username);

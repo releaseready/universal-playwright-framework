@@ -41,12 +41,17 @@ export {
   consumeRuntimeLoginInputs,
   InMemoryRuntimeSecretProvider,
   RuntimeLoginError,
+  RuntimeLoginFailure,
+  RUNTIME_LOGIN_FAILURE_STAGES,
+  RUNTIME_LOGIN_CLEANUP_STATUSES,
   validateRuntimeLoginRequest,
 } from "./input-preparation/runtime-login";
 export { withOperatorLoginInputs } from "./input-preparation/operator-prompt";
 export type {
   RuntimeLoginAccount,
   RuntimeLoginErrorCode,
+  RuntimeLoginFailureStage,
+  RuntimeLoginCleanupStatus,
   RuntimeLoginRequest,
   RuntimeLoginResult,
 } from "./input-preparation/runtime-login";
@@ -71,5 +76,6 @@ export {
   verifyPartayLogin,
   promptAndVerifyPartayLogin,
   PARTAY_LOGIN_URL,
+  partayLoginFailureReport,
 } from "./customer-login/partay";
 export type { RuntimeLoginBrowserOptions } from "./execution/runtime-login-browser";

@@ -3,6 +3,8 @@ import { inspect } from "node:util";
 import { test } from "node:test";
 import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
+import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import type {
   PreparedInputDescriptor,
@@ -12,11 +14,16 @@ import { reviewDataReferences } from "../src/input-preparation/data-references";
 import {
   InMemoryRuntimeSecretProvider,
   RuntimeLoginError,
+  RuntimeLoginFailure,
+  RUNTIME_LOGIN_FAILURE_STAGES,
+  RUNTIME_LOGIN_CLEANUP_STATUSES,
+  consumeRuntimeLoginInputs,
   type RuntimeLoginRequest,
 } from "../src/input-preparation/runtime-login";
 import {
   PARTAY_LOGIN_URL,
   verifyPartayLogin,
+  partayLoginFailureReport,
 } from "../src/customer-login/partay";
 import {
   guardLoginRequests,
@@ -100,6 +107,7 @@ function fixture() {
 
 type Mode =
   | "success"
+  | "navigation-failure"
   | "rejected"
   | "wrong-url"
   | "wrong-logo"
@@ -206,6 +214,10 @@ function ownedBrowser(mode: Mode, afterSubmit?: () => void) {
         const newPage = context.newPage.bind(context);
         context.newPage = async () => {
           page = await newPage();
+          if (mode === "navigation-failure")
+            page.goto = async () => {
+              throw new Error(canary.password);
+            };
           return page;
         };
         return context;
@@ -233,7 +245,201 @@ function assertSafe(error: unknown): boolean {
   assert.ok(!serialized.includes(canary.username));
   assert.ok(!serialized.includes(canary.password));
   assert.equal(error.cause, undefined);
+  assert.ok(error instanceof RuntimeLoginFailure);
+  assert.ok(RUNTIME_LOGIN_FAILURE_STAGES.includes(error.failureStage));
+  assert.ok(RUNTIME_LOGIN_CLEANUP_STATUSES.includes(error.cleanupStatus));
   return true;
+}
+
+function assertFailure(
+  error: unknown,
+  failureStage: RuntimeLoginFailure["failureStage"],
+  cleanupStatus: RuntimeLoginFailure["cleanupStatus"],
+): boolean {
+  assertSafe(error);
+  assert.deepEqual(partayLoginFailureReport(error), {
+    status: "not-verified",
+    failureStage,
+    cleanupStatus,
+    automaticRetryAttempted: false,
+  });
+  return true;
+}
+
+test("failure reports allowlist both dimensions and never serialize arbitrary errors or causes", () => {
+  for (const stage of RUNTIME_LOGIN_FAILURE_STAGES) {
+    for (const status of RUNTIME_LOGIN_CLEANUP_STATUSES) {
+      const error = new RuntimeLoginFailure(stage, status);
+      Object.assign(error, {
+        message: canary.password,
+        cause: new Error(canary.username),
+        request: canary,
+      });
+      assert.deepEqual(partayLoginFailureReport(error), {
+        status: "not-verified",
+        failureStage: stage,
+        cleanupStatus: status,
+        automaticRetryAttempted: false,
+      });
+    }
+  }
+  for (const value of [
+    canary.password,
+    new Error(canary.password, { cause: canary.username }),
+    { failureStage: canary.username, cleanupStatus: canary.password },
+    undefined,
+  ]) {
+    assert.deepEqual(partayLoginFailureReport(value), {
+      status: "not-verified",
+      failureStage: "unclassified",
+      cleanupStatus: "unconfirmed",
+      automaticRetryAttempted: false,
+    });
+    const error = new RuntimeLoginFailure(value, value);
+    assertFailure(error, "unclassified", "unconfirmed");
+    const poisoned = Object.assign(
+      new RuntimeLoginFailure("navigation", "confirmed"),
+      { failureStage: value, cleanupStatus: value },
+    );
+    assert.deepEqual(
+      partayLoginFailureReport(poisoned),
+      partayLoginFailureReport(undefined),
+    );
+  }
+});
+
+test("shared boundary reconstructs only safe metadata and disposes even when disposal throws", async () => {
+  const { descriptor, request, provider } = fixture();
+  let disposals = 0;
+  const poisoned = Object.assign(
+    new RuntimeLoginFailure("navigation", "confirmed"),
+    {
+      message: canary.password,
+      cause: new Error(canary.username),
+      request: canary,
+    },
+  );
+  const wrapped: RuntimeSecretProvider = {
+    resolve: provider.resolve.bind(provider),
+    dispose: () => {
+      disposals += 1;
+      provider.dispose();
+      throw new Error(canary.password);
+    },
+  };
+  await assert.rejects(
+    consumeRuntimeLoginInputs(descriptor, request, wrapped, async () => {
+      throw poisoned;
+    }),
+    (error) => assertFailure(error, "navigation", "confirmed"),
+  );
+  assert.equal(disposals, 1);
+  await assertDisposed(provider, request);
+});
+
+test("provider disposal failure after consumer completion cannot produce a receipt", async () => {
+  const { descriptor, request, provider } = fixture();
+  let disposals = 0;
+  await assert.rejects(
+    consumeRuntimeLoginInputs(
+      descriptor,
+      request,
+      {
+        resolve: provider.resolve.bind(provider),
+        dispose: () => {
+          disposals += 1;
+          provider.dispose();
+          throw new Error(canary.password);
+        },
+      },
+      async () => undefined,
+    ),
+    (error) => assertFailure(error, "input-disposal", "unconfirmed"),
+  );
+  assert.equal(disposals, 1);
+  await assertDisposed(provider, request);
+});
+
+test("interrupted pending launcher cannot report not-acquired or confirmed cleanup", async () => {
+  const { descriptor, request, provider } = fixture();
+  const controller = new AbortController();
+  let launches = 0;
+  await assert.rejects(
+    verifyPartayLogin(descriptor, request, provider, {
+      signal: controller.signal,
+      launchBrowser: async () => {
+        launches += 1;
+        controller.abort();
+        return new Promise<Browser>(() => undefined);
+      },
+    }),
+    (error) => assertFailure(error, "browser-startup", "unconfirmed"),
+  );
+  assert.equal(launches, 1);
+  await assertDisposed(provider, request);
+});
+
+test("CLI input failures emit only safe structured metadata and no success receipt", () => {
+  for (const args of [[], [canary.username, canary.password]]) {
+    const result = spawnSync(
+      process.execPath,
+      [join(__dirname, "verify-partay-login.js"), ...args],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.deepEqual(JSON.parse(result.stderr), {
+      status: "not-verified",
+      failureStage: "input-validation",
+      cleanupStatus: "not-acquired",
+      automaticRetryAttempted: false,
+    });
+    assert.ok(!result.stderr.includes(canary.username));
+    assert.ok(!result.stderr.includes(canary.password));
+  }
+});
+
+for (const fault of ["launch", "context", "page"] as const) {
+  test(`offline ${fault} startup failure reports independent cleanup status and makes one attempt`, async () => {
+    const { descriptor, request, provider } = fixture();
+    let launches = 0;
+    let browserCloses = 0;
+    let contextCloses = 0;
+    await assert.rejects(
+      verifyPartayLogin(descriptor, request, provider, {
+        launchBrowser: async () => {
+          launches += 1;
+          if (fault === "launch") throw new Error(canary.password);
+          return {
+            close: async () => {
+              browserCloses += 1;
+            },
+            newContext: async () => {
+              if (fault === "context") throw new Error(canary.password);
+              return {
+                close: async () => {
+                  contextCloses += 1;
+                },
+                newPage: async () => {
+                  throw new Error(canary.password);
+                },
+              };
+            },
+          } as unknown as Browser;
+        },
+      }),
+      (error) =>
+        assertFailure(
+          error,
+          "browser-startup",
+          fault === "launch" ? "not-acquired" : "confirmed",
+        ),
+    );
+    assert.equal(launches, 1);
+    assert.equal(browserCloses, fault === "launch" ? 0 : 1);
+    assert.equal(contextCloses, fault === "page" ? 1 : 0);
+    await assertDisposed(provider, request);
+  });
 }
 
 test("exact target, rendered Partay and hidden overlay succeed with one submit and fresh cleanup", async () => {
@@ -249,6 +455,21 @@ test("exact target, rendered Partay and hidden overlay succeed with one submit a
   assert.deepEqual(owned.requests, [PARTAY_LOGIN_URL]);
   assert.ok(!JSON.stringify(receipt).includes(canary.username));
   assert.ok(!JSON.stringify(receipt).includes(canary.password));
+  await assertDisposed(provider, request);
+});
+
+test("offline navigation failure is distinct from startup and submission; cleanup is confirmed", async () => {
+  const { descriptor, request, provider } = fixture();
+  const owned = ownedBrowser("navigation-failure");
+  await assert.rejects(
+    verifyPartayLogin(descriptor, request, provider, owned),
+    (error) => assertFailure(error, "navigation", "confirmed"),
+  );
+  assert.equal(owned.submissions, 0);
+  assert.equal(owned.contexts, 1);
+  assert.equal(owned.contextClosed, true);
+  assert.equal(owned.browserClosed, true);
+  assert.deepEqual(owned.requests, []);
   await assertDisposed(provider, request);
 });
 
@@ -268,7 +489,17 @@ for (const mode of [
         ...owned,
         timeoutMs: 2000,
       }),
-      assertSafe,
+      (error) => {
+        assertSafe(error);
+        assert.ok(error instanceof RuntimeLoginFailure);
+        assert.equal(error.failureStage, "submission-assertion");
+        // Deadline cancellation closes both resources independently; a close
+        // rejection must not be upgraded merely because the process exited.
+        if (mode === "wrong-logo")
+          assert.equal(error.cleanupStatus, "confirmed");
+        else assert.notEqual(error.cleanupStatus, "not-acquired");
+        return true;
+      },
     );
     assert.equal(owned.submissions, mode === "missing-form" ? 0 : 1);
     assert.equal(owned.contextClosed, true);
@@ -287,7 +518,13 @@ test("cancellation during login closes browser and disposes provider", async () 
       ...owned,
       signal: controller.signal,
     }),
-    assertSafe,
+    (error) => {
+      assertSafe(error);
+      assert.ok(error instanceof RuntimeLoginFailure);
+      assert.equal(error.failureStage, "submission-assertion");
+      assert.notEqual(error.cleanupStatus, "not-acquired");
+      return true;
+    },
   );
   assert.equal(owned.submissions, 1);
   assert.equal(owned.contextClosed, true);
@@ -365,7 +602,12 @@ for (const fault of [
           throw new Error(canary.password);
         },
       }),
-      assertSafe,
+      (error) =>
+        assertFailure(
+          error,
+          fault === "cancelled" ? "browser-startup" : "input-validation",
+          "not-acquired",
+        ),
     );
     assert.equal(launches, 0);
     if (fault === "empty") assert.equal(disposed, true);
@@ -402,7 +644,7 @@ test("launcher failure is sanitized and disposes input", async () => {
         throw new Error(canary.password);
       },
     }),
-    assertSafe,
+    (error) => assertFailure(error, "browser-startup", "not-acquired"),
   );
   await assertDisposed(provider, request);
 });
@@ -650,7 +892,12 @@ for (const fault of ["context", "browser", "both"]) {
               return browser;
             },
           }),
-          assertSafe,
+          (error) =>
+            assertFailure(
+              error,
+              outcome === "success" ? "cleanup" : "submission-assertion",
+              "unconfirmed",
+            ),
         );
         assert.ok(
           Date.now() - started < 2000 + LOGIN_CLEANUP_TIMEOUT_MS + 1500,

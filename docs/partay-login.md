@@ -99,9 +99,45 @@ review the account/permission before any subsequent run.
 
 Only after all assertions and cleanup succeed, the command emits a reference-only
 receipt with `checks.expectedUrlMatched`, `checks.partayLogoVisible`,
-`checks.overlayDismissed` and `checks.cleanupCompleted` set to `true`. A failure
-emits a fixed safe message and exits nonzero, not a successful receipt. Share only
-the sanitized outcome, never raw browser/terminal logs or account values.
+`checks.overlayDismissed` and `checks.cleanupCompleted` set to `true`, and
+`cleanupStatus: "confirmed"`. A failure emits only a structured safe report to
+stderr and exits nonzero, never a successful receipt:
+
+```json
+{
+  "status": "not-verified",
+  "failureStage": "navigation",
+  "cleanupStatus": "confirmed",
+  "automaticRetryAttempted": false
+}
+```
+
+Failure stages are allowlisted: `input-validation` (including reference-file
+reading/parsing and secure input collection), `browser-startup` (launch,
+context/page acquisition), `navigation` (destination guard, initial navigation
+and URL assertion), `submission-assertion` (form, single submit and remaining
+assertions), `cleanup` (assertions completed but shutdown unconfirmed),
+`input-disposal` (runtime provider disposal failed), or `unclassified` (unknown
+diagnostic metadata). No exception text, cause, request contents, paths or
+arbitrary supplied strings are included. `partayLoginFailureReport` reconstructs
+only allowlisted values and returns no account/scope data.
+
+Cleanup is a **separate dimension**, not the failure stage:
+
+- `not-acquired`: no browser/context was returned and no acquisition is pending,
+  e.g. input validation or a launcher rejection before resources were returned.
+  This does not prove a defective launcher created no OS process.
+- `confirmed`: all acquired browser/context close promises resolved within the
+  budget. A navigation/assertion failure can still have confirmed cleanup.
+- `unconfirmed`: a close rejected, did not settle within the budget, or resource
+  acquisition was interrupted while pending. Late closure remains best-effort;
+  the returned status is not retroactively upgraded.
+
+An earlier failure stage is retained even if cleanup also fails. Successful
+assertions with unconfirmed cleanup report stage `cleanup`, exit nonzero and
+produce no receipt or `cleanupCompleted: true` fallback. These statuses describe
+local resource closure, not server-session revocation or OS-level termination.
+Share only the sanitized outcome, never raw browser/terminal logs or account values.
 
 `promptAndVerifyPartayLogin` exposes the same operator path in-process. It uses
 `withOperatorLoginInputs`, which in turn reuses `consumeRuntimeLoginInputs`.
@@ -125,10 +161,22 @@ are tested after successful assertions, assertion failure, cancellation and
 timeout: both closures are attempted, the safe result fails within the deadline
 plus cleanup budget, and the provider is disposed. Tests explicitly rescue
 their owned browsers afterwards; this is not evidence that a hung production
-close stopped its process. It is included in `test:features:regression`.
+close stopped its process. Focused offline tests also cover input/CLI failures,
+launch/context/page startup failures, navigation versus submission/assertion
+stages, independent confirmed/unconfirmed cleanup, interrupted pending launch,
+provider disposal faults, and allowlist reconstruction from canary-bearing
+exceptions, causes and injected metadata. It is included in
+`test:features:regression`.
 
 Live customer acceptance remains **PENDING**. No live credentials, customer
 attempts or shared/staging browser interactions are part of these checks.
+The previous operator attempt's login outcome is **UNKNOWN**: do not infer
+successful authentication or credential rejection from its generic failure.
+Its cleanup outcome is also **UNKNOWN**. No new live attempt was performed for
+this repair. A read-only process check found no exact `verify-partay-login.js`
+Node parent remaining, so no browser could be definitively attributed to that
+attempt; ownership remains **UNKNOWN**. No process was stopped, and no browser
+profile or customer content was accessed.
 
 For RRDSCRUM-62, retain rather than unnecessarily rerun
 [merged PR #21](https://github.com/releaseready/universal-playwright-framework/pull/21)
