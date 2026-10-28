@@ -1,7 +1,7 @@
 {
   "default": {
     "paths": ["features/**/*.feature"],
-    "tags": "not @web-run-inputs and not @retry-regression",
+    "tags": "not @web-run-inputs and not @retry-regression and not @web-readable-results and not @local-package-adapter",
     "require": [
       "dist/cucumber/features/support/hooks.js",
       "dist/cucumber/features/steps/synthetic.steps.js"

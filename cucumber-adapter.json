@@ -1,0 +1,7 @@
+{
+  "default": {
+    "paths": ["features/adapter/local-package.feature"],
+    "require": ["dist/cucumber/features/adapter/steps.js"],
+    "format": ["progress"]
+  }
+}

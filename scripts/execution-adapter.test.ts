@@ -51,6 +51,18 @@ test("reviewed synthetic browser actions pass with confirmed isolated cleanup", 
     {
       scenarioId: "browser-flow",
       status: "passed",
+      cucumber: {
+        featureName: "Execute reviewed synthetic scenarios",
+        scenarioName: "A reviewed visitor action succeeds",
+        steps: [
+          { name: "the synthetic reviewed page is open", status: "passed" },
+          { name: "I enter the prepared display name", status: "passed" },
+          {
+            name: "the synthetic page confirms the prepared display name",
+            status: "passed",
+          },
+        ],
+      },
       cleanupStatus: "confirmed",
       cleanupFailures: [],
       cleanupFaultInjected: false,

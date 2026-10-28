@@ -4,7 +4,7 @@
  */
 
 import { Page, Locator, expect } from "@playwright/test";
-import { Logger } from "@utils/logger";
+import { Logger } from "../utils/logger";
 
 export abstract class BasePage {
   protected page: Page;

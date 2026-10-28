@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "run": {
+    "id": "central-run-16",
+    "gitRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "target": "owned-synthetic",
+  "scenarioIds": ["browser-flow"],
+  "approval": {
+    "sourceRevision": "rrdweb4-synthetic-source-1",
+    "featureRevision": "c916c0e7ad8efab755c669578827870c5fdfb48e53536362715d7dfdfcc31268",
+    "implementationRevision": "647e2d8e412a1d43377df874e73f3405f28486b33827a76da84142cd9d8bc9d6"
+  },
+  "inputs": {
+    "fixtureRevision": "synthetic-execution-fixtures-1",
+    "environmentRevision": "loopback-only-1",
+    "policyRevision": "synthetic-field-policy-1"
+  },
+  "limits": {
+    "runTimeoutMs": 90000,
+    "scenarioTimeoutMs": 30000,
+    "maxConcurrentScenarios": 1,
+    "retryCount": 0
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "default": {
+    "paths": ["features/reporting/readable-results.feature"],
+    "require": ["dist/cucumber/features/reporting/steps.js"],
+    "format": ["progress"]
+  }
+}
