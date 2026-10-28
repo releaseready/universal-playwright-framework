@@ -451,6 +451,10 @@ test("tampered emitted code, runner config, and dependency metadata fail pre-acq
     "dist/cucumber/features/execution/steps.js",
     "src/input-preparation/data-references.ts",
     "dist/cucumber/src/input-preparation/data-references.js",
+    "src/input-preparation/runtime-login.ts",
+    "dist/cucumber/src/input-preparation/runtime-login.js",
+    "src/input-preparation/operator-prompt.ts",
+    "dist/cucumber/src/input-preparation/operator-prompt.js",
     "cucumber-execution.json",
     "node_modules/playwright/package.json",
   ]) {
