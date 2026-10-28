@@ -17,7 +17,7 @@ export const REVIEWED_SOURCE_REVISION = "rrdweb4-synthetic-source-1";
 export const REVIEWED_FEATURE_REVISION =
   "c916c0e7ad8efab755c669578827870c5fdfb48e53536362715d7dfdfcc31268";
 export const REVIEWED_IMPLEMENTATION_REVISION =
-  "a7808125267e9caa3737d4a7994da5c12b4879e4d63d96bfc13c2e48e49575f3";
+  "64ec6d4876eba0b6927f3c126f8c6f236a616ac317f2268ff575e80bb0b58e65";
 
 const stepManifest: ReviewedStepManifest = {
   implementationRevision: REVIEWED_IMPLEMENTATION_REVISION,
@@ -146,6 +146,7 @@ export function calculateReviewedImplementationRevision(): string {
     "features/execution/support/world.ts",
     "features/support/step-timeout.ts",
     "src/input-preparation/index.ts",
+    "src/input-preparation/data-references.ts",
     "src/validation/feature-validator.ts",
     "src/validation/scenario-selector.ts",
     "dist/cucumber/src/execution/index.js",
@@ -154,6 +155,7 @@ export function calculateReviewedImplementationRevision(): string {
     "dist/cucumber/src/reporting/index.js",
     "dist/cucumber/src/reporting/output.js",
     "dist/cucumber/src/input-preparation/index.js",
+    "dist/cucumber/src/input-preparation/data-references.js",
     "dist/cucumber/src/validation/feature-validator.js",
     "dist/cucumber/src/validation/scenario-selector.js",
     "dist/cucumber/features/execution/steps.js",

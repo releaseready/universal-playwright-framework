@@ -5,6 +5,12 @@ import {
   type ScenarioSelectionFilters,
 } from "../validation/scenario-selector";
 import type { FeatureValidation } from "../validation/feature-validator";
+import {
+  verifyDataReferenceBinding,
+  type ApprovedDataCatalogue,
+  type DataReferenceSelection,
+  type ReviewedDataReferences,
+} from "./data-references";
 
 export const MAX_INPUT_DOCUMENT_BYTES = 64 * 1024;
 export const MAX_PREPARED_SCENARIOS = 100;
@@ -139,10 +145,37 @@ const environmentSchema = z
     initialTargetUrl: z.string().min(1).max(2_048),
   })
   .strict();
+const environmentReferenceSchema = z
+  .object({
+    id: identifierSchema,
+    revision: revisionSchema,
+    approvedOrigin: z.string().min(1).max(2_048),
+  })
+  .strict();
+const dataReferencePreparationSchema = z
+  .object({
+    selection: z.unknown(),
+    approvedCatalogue: z.unknown(),
+    binding: z.string().regex(/^[a-f0-9]{64}$/),
+    approvedEnvironment: environmentReferenceSchema,
+  })
+  .strict();
 const accountSchema = z
   .object({
     reference: identifierSchema,
     secretReference: identifierSchema,
+  })
+  .strict();
+const fixtureDataReferenceSchema = z
+  .object({
+    dataset: z
+      .object({ id: scenarioIdSchema, revision: scenarioIdSchema })
+      .strict(),
+    rowId: scenarioIdSchema,
+    secret: z
+      .object({ id: scenarioIdSchema, revision: scenarioIdSchema })
+      .strict()
+      .optional(),
   })
   .strict();
 const cleanupSchema = z
@@ -156,6 +189,7 @@ const scenarioInputSchema = z
   .object({
     id: scenarioIdSchema,
     values: fixtureValuesSchema,
+    dataReference: fixtureDataReferenceSchema.optional(),
     accountReference: z.string().max(128),
     cleanup: cleanupSchema,
   })
@@ -203,6 +237,7 @@ export interface RuntimeSecretProvider {
 export interface PreparedScenarioInputs {
   readonly id: string;
   readonly tags: readonly string[];
+  readonly dataReference?: DataReferenceSelection["rows"][number];
   readonly values: Readonly<
     Record<string, string | number | boolean | readonly string[]>
   >;
@@ -237,7 +272,19 @@ export interface PreparedInputDescriptor {
     readonly revision: string;
   };
   readonly fixtureRevision: string;
+  readonly dataReferences?: ReviewedDataReferences;
   readonly scenarios: readonly PreparedScenarioInputs[];
+}
+
+export interface ReviewedDataReferenceInput {
+  readonly selection: DataReferenceSelection;
+  readonly approvedCatalogue: ApprovedDataCatalogue;
+  readonly binding: string;
+  readonly approvedEnvironment: {
+    readonly id: string;
+    readonly revision: string;
+    readonly approvedOrigin: string;
+  };
 }
 
 export type InputPreparationErrorCode =
@@ -248,7 +295,8 @@ export type InputPreparationErrorCode =
   | "invalid-scenario-data"
   | "invalid-account-reference"
   | "invalid-selection"
-  | "invalid-fixture-policy";
+  | "invalid-fixture-policy"
+  | "invalid-data-reference";
 
 export class InputPreparationError extends Error {
   constructor(
@@ -365,6 +413,7 @@ export function prepareScenarioInputs(
   approval: ScenarioApproval,
   fixturePolicyInput: ReviewedFixtureFieldPolicy,
   filters: ScenarioSelectionFilters = {},
+  dataReferenceInput?: ReviewedDataReferenceInput,
 ): PreparedInputDescriptor {
   const fixturePolicyResult = fixturePolicySchema.safeParse(fixturePolicyInput);
   if (!fixturePolicyResult.success) {
@@ -407,6 +456,48 @@ export function prepareScenarioInputs(
       "invalid-environment",
       "Approved environment origin must be an HTTP(S) origin",
     );
+  }
+  let reviewedDataReferences: ReviewedDataReferences | undefined;
+  if (dataReferenceInput !== undefined) {
+    const dataReferenceResult =
+      dataReferencePreparationSchema.safeParse(dataReferenceInput);
+    if (!dataReferenceResult.success) {
+      return fail(
+        "invalid-data-reference",
+        "Reviewed data references are missing or invalid",
+      );
+    }
+    const reviewedOrigin = parseOrigin(
+      dataReferenceResult.data.approvedEnvironment.approvedOrigin,
+    );
+    if (
+      dataReferenceResult.data.approvedEnvironment.id !==
+        environmentResult.data.id ||
+      dataReferenceResult.data.approvedEnvironment.revision !==
+        environmentResult.data.revision ||
+      !reviewedOrigin ||
+      reviewedOrigin.origin !== origin.origin
+    ) {
+      return fail(
+        "invalid-environment",
+        "Selected environment does not match the reviewed environment",
+      );
+    }
+    try {
+      reviewedDataReferences = verifyDataReferenceBinding(
+        dataReferenceResult.data.selection,
+        dataReferenceResult.data.approvedCatalogue,
+        dataReferenceResult.data.binding,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error &&
+        error.message ===
+          "Data reference review is stale; review the selected data again"
+          ? error.message
+          : "Data references are missing, invalid or unapproved";
+      return fail("invalid-data-reference", message);
+    }
   }
   let target: URL | undefined;
   try {
@@ -462,7 +553,49 @@ export function prepareScenarioInputs(
     );
   }
   const selectedIdSet = new Set(selectedIds as string[]);
+  if (
+    reviewedDataReferences &&
+    (reviewedDataReferences.rows.length !== selectedIds.length ||
+      reviewedDataReferences.rows.some(
+        (row) => !selectedIdSet.has(row.scenarioId),
+      ))
+  ) {
+    return fail(
+      "invalid-data-reference",
+      "Data references must exactly match the approved scenario selection",
+    );
+  }
   const scenarioInputs = fixtureResult.data.scenarios;
+  if (
+    !reviewedDataReferences &&
+    scenarioInputs.some((scenario) => scenario.dataReference !== undefined)
+  ) {
+    return fail(
+      "invalid-data-reference",
+      "Fixture data references require an approved data reference review",
+    );
+  }
+  if (
+    reviewedDataReferences &&
+    reviewedDataReferences.rows.some((reference) => {
+      const fixture = scenarioInputs.find(
+        (scenario) => scenario.id === reference.scenarioId,
+      );
+      return (
+        !fixture?.dataReference ||
+        fixture.dataReference.rowId !== reference.rowId ||
+        fixture.dataReference.dataset.id !== reference.dataset.id ||
+        fixture.dataReference.dataset.revision !== reference.dataset.revision ||
+        fixture.dataReference.secret?.id !== reference.secret?.id ||
+        fixture.dataReference.secret?.revision !== reference.secret?.revision
+      );
+    })
+  ) {
+    return fail(
+      "invalid-data-reference",
+      "Fixture rows do not match the reviewed dataset references",
+    );
+  }
   if (
     scenarioInputs.length !== selectedIds.length ||
     new Set(scenarioInputs.map((scenario) => scenario.id)).size !==
@@ -511,6 +644,15 @@ export function prepareScenarioInputs(
         "Scenario fixture data must exactly match the approved selection",
       );
     }
+    const dataReference = reviewedDataReferences?.rows.find(
+      (reference) => reference.scenarioId === scenario.id,
+    );
+    if (reviewedDataReferences && !dataReference) {
+      return fail(
+        "invalid-data-reference",
+        "Data references must exactly match the approved scenario selection",
+      );
+    }
     const account = accounts.get(fixture.accountReference);
     if (
       !account ||
@@ -526,6 +668,7 @@ export function prepareScenarioInputs(
     return {
       id: scenario.id as string,
       tags: [...scenario.tags],
+      ...(dataReference ? { dataReference } : {}),
       values: copyValues(fixture.values),
       account: {
         reference: account.reference,
@@ -570,6 +713,9 @@ export function prepareScenarioInputs(
       revision: fixturePolicy.revision,
     },
     fixtureRevision: fixtureResult.data.fixtureRevision,
+    ...(reviewedDataReferences
+      ? { dataReferences: reviewedDataReferences }
+      : {}),
     scenarios: preparedScenarios,
   };
 }

@@ -449,6 +449,8 @@ test("injected cleanup failure is visible and has a safe diagnostic reference", 
 test("tampered emitted code, runner config, and dependency metadata fail pre-acquisition", async () => {
   for (const relativePath of [
     "dist/cucumber/features/execution/steps.js",
+    "src/input-preparation/data-references.ts",
+    "dist/cucumber/src/input-preparation/data-references.js",
     "cucumber-execution.json",
     "node_modules/playwright/package.json",
   ]) {

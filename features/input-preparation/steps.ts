@@ -13,14 +13,19 @@ import {
   InputPreparationError,
   prepareScenarioInputs,
   type PreparedInputDescriptor,
+  type ReviewedDataReferenceInput,
   type ReviewedFixtureFieldPolicy,
 } from "../../src/input-preparation";
+import { reviewDataReferences } from "../../src/input-preparation/data-references";
 import {
   validateFeatureFile,
   type FeatureValidation,
   type ReviewedStepManifest,
 } from "../../src/validation/feature-validator";
-import type { ScenarioApproval } from "../../src/validation/scenario-selector";
+import type {
+  ScenarioApproval,
+  ScenarioSelectionFilters,
+} from "../../src/validation/scenario-selector";
 
 const repositoryRoot = path.resolve(__dirname, "../../../..");
 const inputFixturePath = path.join(
@@ -70,6 +75,8 @@ class InputPreparationWorld extends World {
   validation?: FeatureValidation;
   approval?: ScenarioApproval;
   fixturePolicy = reviewedFixturePolicy;
+  filters?: ScenarioSelectionFilters;
+  dataReferenceInput?: ReviewedDataReferenceInput;
   descriptor?: PreparedInputDescriptor;
   error?: unknown;
 
@@ -114,6 +121,8 @@ async function loadReviewedScenarios(
 function useApprovedFixture(world: InputPreparationWorld): void {
   world.inputJson = readFileSync(inputFixturePath, "utf8");
   world.fixturePolicy = reviewedFixturePolicy;
+  world.filters = undefined;
+  world.dataReferenceInput = undefined;
   world.descriptor = undefined;
   world.error = undefined;
 }
@@ -133,6 +142,151 @@ Given(
   async function (this: InputPreparationWorld) {
     useApprovedFixture(this);
     await loadReviewedScenarios(this);
+  },
+);
+
+Given(
+  "two selected owned dataset rows have reviewed references",
+  async function (this: InputPreparationWorld) {
+    useApprovedFixture(this);
+    await loadReviewedScenarios(this);
+    const selection = {
+      version: 1 as const,
+      rows: ["row-a", "row-b"].map((rowId) => ({
+        scenarioId: `approved-outline/${rowId}`,
+        dataset: { id: "owned-demo", revision: "v1" },
+        rowId,
+      })),
+    };
+    const approvedCatalogue = {
+      datasets: [
+        { id: "owned-demo", revision: "v1", rows: ["row-a", "row-b"] },
+      ],
+      secrets: [],
+    };
+    const reviewed = reviewDataReferences(selection, approvedCatalogue);
+    this.dataReferenceInput = {
+      selection,
+      approvedCatalogue,
+      binding: reviewed.binding,
+      approvedEnvironment: {
+        id: "synthetic-review",
+        revision: "environment-1",
+        approvedOrigin: "https://synthetic.example.test",
+      },
+    };
+    this.filters = {
+      scenarioIds: ["approved-outline/row-a", "approved-outline/row-b"],
+    };
+    const input = JSON.parse(this.inputJson) as {
+      scenarios: {
+        id: string;
+        dataReference?: {
+          dataset: { id: string; revision: string };
+          rowId: string;
+        };
+      }[];
+    };
+    input.scenarios = input.scenarios.filter((scenario) =>
+      selection.rows.some((reference) => reference.scenarioId === scenario.id),
+    );
+    for (const reference of selection.rows) {
+      const fixture = input.scenarios.find(
+        (scenario) => scenario.id === reference.scenarioId,
+      );
+      assert.ok(fixture);
+      fixture.dataReference = {
+        dataset: { ...reference.dataset },
+        rowId: reference.rowId,
+      };
+    }
+    this.inputJson = JSON.stringify(input);
+  },
+);
+
+When(
+  "the selected dataset revision changes without a new review",
+  function (this: InputPreparationWorld) {
+    assert.ok(this.dataReferenceInput);
+    const selection = structuredClone(this.dataReferenceInput.selection);
+    selection.rows[0].dataset.revision = "v2";
+    this.dataReferenceInput = {
+      ...this.dataReferenceInput,
+      selection,
+      approvedCatalogue: {
+        ...this.dataReferenceInput.approvedCatalogue,
+        datasets: [
+          ...this.dataReferenceInput.approvedCatalogue.datasets,
+          {
+            ...this.dataReferenceInput.approvedCatalogue.datasets[0],
+            revision: "v2",
+          },
+        ],
+      },
+    };
+  },
+);
+
+When(
+  "the selected data references omit one runnable scenario",
+  function (this: InputPreparationWorld) {
+    assert.ok(this.dataReferenceInput);
+    const selection = {
+      ...this.dataReferenceInput.selection,
+      rows: this.dataReferenceInput.selection.rows.slice(1),
+    };
+    const reviewed = reviewDataReferences(
+      selection,
+      this.dataReferenceInput.approvedCatalogue,
+    );
+    this.dataReferenceInput = {
+      ...this.dataReferenceInput,
+      selection,
+      binding: reviewed.binding,
+    };
+  },
+);
+
+When(
+  "the selected data references are missing",
+  function (this: InputPreparationWorld) {
+    assert.ok(this.dataReferenceInput);
+    this.dataReferenceInput = {
+      ...this.dataReferenceInput,
+      selection: { version: 1, rows: [] },
+    };
+  },
+);
+
+When(
+  "a fixture row names a different selected dataset row",
+  function (this: InputPreparationWorld) {
+    const input = JSON.parse(this.inputJson) as {
+      scenarios: {
+        id: string;
+        dataReference?: { rowId: string };
+      }[];
+    };
+    const fixture = input.scenarios.find(
+      (scenario) => scenario.id === "approved-outline/row-a",
+    );
+    assert.ok(fixture?.dataReference);
+    fixture.dataReference.rowId = "row-b";
+    this.inputJson = JSON.stringify(input);
+  },
+);
+
+When(
+  "the selected environment revision differs from the reviewed environment",
+  function (this: InputPreparationWorld) {
+    assert.ok(this.dataReferenceInput);
+    this.dataReferenceInput = {
+      ...this.dataReferenceInput,
+      approvedEnvironment: {
+        ...this.dataReferenceInput.approvedEnvironment,
+        revision: "environment-2",
+      },
+    };
   },
 );
 
@@ -324,6 +478,8 @@ When("I prepare the scenario inputs", function (this: InputPreparationWorld) {
       this.validation,
       this.approval,
       this.fixturePolicy,
+      this.filters,
+      this.dataReferenceInput,
     );
   } catch (error) {
     this.error = error;
@@ -362,6 +518,39 @@ Then(
       "ambient",
       "jazz",
     ]);
+  },
+);
+
+Then(
+  "the descriptor records the reviewed dataset revision and rows",
+  function (this: InputPreparationWorld) {
+    assert.ok(this.descriptor?.dataReferences);
+    assert.deepEqual(
+      this.descriptor.dataReferences.rows.map((row) => ({
+        scenarioId: row.scenarioId,
+        dataset: row.dataset,
+        rowId: row.rowId,
+      })),
+      [
+        {
+          scenarioId: "approved-outline/row-a",
+          dataset: { id: "owned-demo", revision: "v1" },
+          rowId: "row-a",
+        },
+        {
+          scenarioId: "approved-outline/row-b",
+          dataset: { id: "owned-demo", revision: "v1" },
+          rowId: "row-b",
+        },
+      ],
+    );
+    assert.deepEqual(
+      this.descriptor.scenarios.map(
+        (scenario) => scenario.dataReference?.rowId,
+      ),
+      ["row-a", "row-b"],
+    );
+    assert.equal(this.descriptor.dataReferences.binding.length, 64);
   },
 );
 

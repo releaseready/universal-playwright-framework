@@ -8,6 +8,47 @@ Feature: Prepare bounded inputs for reviewed synthetic scenarios
     When I prepare the scenario inputs
     Then the prepared descriptor contains only safe revisions and selected values
 
+  @web-run-inputs-S01
+  Scenario: Prepare only selected approved dataset rows
+    Given two selected owned dataset rows have reviewed references
+    When I prepare the scenario inputs
+    Then the descriptor records the reviewed dataset revision and rows
+
+  @web-run-inputs-S02
+  Scenario: Reject selected data references that are missing
+    Given two selected owned dataset rows have reviewed references
+    When the selected data references are missing
+    And I prepare the scenario inputs
+    Then preparation fails safely with "invalid-data-reference"
+
+  @web-run-inputs-S02
+  Scenario: Reject a dataset revision that changed after review
+    Given two selected owned dataset rows have reviewed references
+    When the selected dataset revision changes without a new review
+    And I prepare the scenario inputs
+    Then preparation fails safely with "invalid-data-reference"
+
+  @web-run-inputs-S02
+  Scenario: Reject references that omit a runnable scenario row
+    Given two selected owned dataset rows have reviewed references
+    When the selected data references omit one runnable scenario
+    And I prepare the scenario inputs
+    Then preparation fails safely with "invalid-data-reference"
+
+  @web-run-inputs-S02
+  Scenario: Reject fixture content mapped to a different dataset row
+    Given two selected owned dataset rows have reviewed references
+    When a fixture row names a different selected dataset row
+    And I prepare the scenario inputs
+    Then preparation fails safely with "invalid-data-reference"
+
+  @web-run-inputs-S02
+  Scenario: Reject an environment that differs from its reviewed revision
+    Given two selected owned dataset rows have reviewed references
+    When the selected environment revision differs from the reviewed environment
+    And I prepare the scenario inputs
+    Then preparation fails safely with "invalid-environment"
+
   @web-run-inputs-S02
   Scenario: Reject missing approved environment settings safely
     Given the synthetic fixture has no environment settings
