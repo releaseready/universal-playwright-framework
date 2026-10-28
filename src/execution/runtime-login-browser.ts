@@ -8,6 +8,7 @@ import {
   RuntimeLoginFailure,
   type RuntimeLoginFailureStage,
   type RuntimeLoginCleanupStatus,
+  type RuntimeLoginPolicyReason,
 } from "../input-preparation/runtime-login";
 
 export interface RuntimeLoginBrowserOptions {
@@ -34,22 +35,25 @@ export async function guardLoginRequests(
   ) {
     throw new Error("Invalid login destination policy");
   }
-  let blocked = false;
+  let policyReason: RuntimeLoginPolicyReason | undefined;
+  const record = (reason: RuntimeLoginPolicyReason): void => {
+    policyReason ??= reason;
+  };
   await context.routeWebSocket("**/*", (socket) => {
-    blocked = true;
+    record("websocket");
     socket.close();
   });
   await context.route("**/*", async (route) => {
     try {
       const request = route.request();
       const url = new URL(request.url());
-      if (
-        url.origin !== approvedOrigin ||
-        url.username ||
-        url.password ||
-        (request.isNavigationRequest() && request.url() !== loginUrl)
-      ) {
-        blocked = true;
+      if (url.origin !== approvedOrigin || url.username || url.password) {
+        record("off-origin");
+        await route.abort("blockedbyclient");
+        return;
+      }
+      if (request.isNavigationRequest() && request.url() !== loginUrl) {
+        record("document-destination");
         await route.abort("blockedbyclient");
         return;
       }
@@ -58,7 +62,7 @@ export async function guardLoginRequests(
         // Playwright routing does not intercept subsequent HTTP redirect hops.
         // Reject even same-origin redirects rather than handing a 30x to Chromium.
         if (response.status() >= 300 && response.status() < 400) {
-          blocked = true;
+          record("http-redirect");
           await route.abort("blockedbyclient");
           return;
         }
@@ -67,19 +71,24 @@ export async function guardLoginRequests(
         await response.dispose();
       }
     } catch {
-      blocked = true;
+      record("transport-error");
       await route.abort("blockedbyclient").catch(() => undefined);
     }
   });
   return () => {
-    if (blocked) throw new Error("Login request policy was not satisfied");
+    if (policyReason)
+      throw new RuntimeLoginFailure(
+        "request-policy",
+        "unconfirmed",
+        policyReason,
+      );
   };
 }
 
 export async function withFreshLoginPage(
   consume: (
     page: Page,
-    setStage: (stage: "navigation" | "submission-assertion") => void,
+    setStage: (stage: RuntimeLoginFailureStage) => void,
   ) => Promise<void>,
   options: RuntimeLoginBrowserOptions = {},
 ): Promise<void> {
@@ -108,6 +117,7 @@ export async function withFreshLoginPage(
   let acquisitionInterrupted = false;
   let stage: RuntimeLoginFailureStage = "browser-startup";
   let failureStage: RuntimeLoginFailureStage | undefined;
+  let policyReason: RuntimeLoginPolicyReason | undefined;
   let cleanupStatus: RuntimeLoginCleanupStatus = "unconfirmed";
   const abort = (): void => {
     controller.abort();
@@ -160,15 +170,15 @@ export async function withFreshLoginPage(
     page.setDefaultNavigationTimeout(Math.max(1, deadline - Date.now()));
     stage = "submission-assertion";
     await consume(page, (next) => {
-      if (next === "navigation" || next === "submission-assertion")
-        stage = next;
+      stage = new RuntimeLoginFailure(next, "unconfirmed").failureStage;
     });
     checkActive();
   };
   try {
     await Promise.race([work(), interrupted]);
-  } catch {
+  } catch (error) {
     failureStage = stage;
+    policyReason = RuntimeLoginFailure.fromUnknown(error)?.policyReason;
     acquisitionInterrupted = pendingAcquisition;
   } finally {
     clearTimeout(timer);
@@ -212,6 +222,10 @@ export async function withFreshLoginPage(
     }
   }
   if (failureStage || cleanupStatus === "unconfirmed") {
-    throw new RuntimeLoginFailure(failureStage ?? "cleanup", cleanupStatus);
+    throw new RuntimeLoginFailure(
+      failureStage ?? "cleanup",
+      cleanupStatus,
+      policyReason,
+    );
   }
 }

@@ -91,8 +91,9 @@ npm run verify:partay-login -- /path/to/approved-descriptor.json /path/to/approv
 ```
 
 Only reference-file paths are arguments. The existing non-echo TTY prompt
-collects both account fields in memory. There is no credential file, environment
-variable, argument, pipe or chat fallback. SIGINT/SIGTERM request cancellation,
+collects both account fields in memory. There is no automatic environment-variable, credential-argument, pipe or chat
+fallback. The separately approved opt-in local-file path below is not used by
+the default TTY invocation. SIGINT/SIGTERM request cancellation,
 and cleanup is awaited before returning. Do not capture terminal input or enable
 debug recording. A rejected login is not retried; stop and have the operator
 review the account/permission before any subsequent run.
@@ -115,12 +116,36 @@ stderr and exits nonzero, never a successful receipt:
 Failure stages are allowlisted: `input-validation` (including reference-file
 reading/parsing and secure input collection), `browser-startup` (launch,
 context/page acquisition), `navigation` (destination guard, initial navigation
-and URL assertion), `submission-assertion` (form, single submit and remaining
-assertions), `cleanup` (assertions completed but shutdown unconfirmed),
+and URL assertion), `submission-assertion` (shared consumer fallback),
+`form-visible`, `username-fill`, `password-fill`, `submit-click`,
+`overlay-dismissal`, `final-url`, `brand-visible`, `brand-text`,
+`request-policy` (the individual Partay operation that did not complete),
+`cleanup` (assertions completed but shutdown unconfirmed),
 `input-disposal` (runtime provider disposal failed), or `unclassified` (unknown
 diagnostic metadata). No exception text, cause, request contents, paths or
 arbitrary supplied strings are included. `partayLoginFailureReport` reconstructs
 only allowlisted values and returns no account/scope data.
+
+When the final request-policy check fails, `policyReason` contains only the
+first observed category: `off-origin`, `document-destination`, `http-redirect`,
+`websocket`, or `transport-error`. Unknown values are omitted. No destination,
+request contents, response body or exception text is included. This is diagnostic
+metadata, not permission to relax the guard. If an earlier operation fails
+before the final policy check, the reason may be absent.
+
+The stage is set immediately before each operation; it is not a diagnosis of
+credential rejection or proof the server received a submission. A `submit-click`
+failure can occur before or after a click was dispatched. An `overlay-dismissal`
+failure means dismissal was not verified, not necessarily that authentication
+failed. Request-policy failure can include blocked redirects, off-origin traffic
+or transport errors; no destinations or response bodies are reported.
+
+The operator-reported attempt on revision `59664fe` returned
+`submission-assertion` / `confirmed` with no automatic retry. Its login remains
+not verified; the broad historical stage cannot be retrospectively narrowed.
+The earlier attempt's login and cleanup remain unknown. Added offline operation
+checkpoints do not authorize a new live attempt or reuse of either consumed
+request.
 
 Cleanup is a **separate dimension**, not the failure stage:
 
@@ -144,6 +169,41 @@ Share only the sanitized outcome, never raw browser/terminal logs or account val
 The shared browser displayed in an editor is not reused for credential entry.
 
 ## Local checks and retained handover evidence
+
+### Separately approved private-file input
+
+This is an explicit change from runtime-only credential collection. It requires
+separate review and authorization before customer use. It does not authorize
+reuse of any consumed run or another live attempt.
+
+The CLI accepts an optional `--private-account-file /absolute/path/account.json`
+after the two reference-file arguments. Only the path is an argument, never the
+account values. File contents must be a strict JSON object with exactly
+`username` and `password`, supplied locally by the authorized operator. Do not
+commit the file or create it inside the repository.
+
+On supported POSIX systems the file must be a regular, non-symlink, single-link,
+current-user-owned file with mode `0600`, at most 8 KiB, in a current-user-owned
+directory with mode `0700`. Its resolved location must be outside the current
+Git repository. Windows is rejected rather than relying on POSIX permission
+checks. The repository boundary comes from the CLI's current Git worktree,
+not the submitted descriptor.
+
+After preflight and file-security checks, the directory entry is unlinked
+**before parsing and before browser startup**. Unlink or close failure prevents
+browser acquisition. Validated values are passed through the existing scoped
+in-memory provider and consumer, with disposal on every exit. The temporary
+read buffer is cleared. A second invocation cannot reuse the removed file.
+No contents, paths or raw filesystem errors appear in the result.
+
+An untrusted/insecure file or invalid reference preflight is rejected without
+deleting the file: the runner does not delete a path it could not validate.
+The operator must remove rejected files explicitly. Parsed-invalid files that
+passed security checks have already been unlinked. File removal is not secure
+disk erasure: filesystem snapshots/backups, editor history and previously
+retained copies are outside this helper's guarantees. Browser `cleanupStatus`
+still describes browser/context closure, not secure disk erasure or server
+session revocation. No actual customer credential file is provided by this PR.
 
 `npm run test:customer-login` compiles and runs owned Chromium fixtures.
 Customer-URL fixtures remap only the guarded transport to owned loopback HTTP
