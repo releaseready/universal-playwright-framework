@@ -228,10 +228,28 @@ export interface ReviewedFixtureFieldPolicy {
 
 export interface SecretReference {
   readonly id: string;
+  readonly revision?: string;
+  readonly field?: "username" | "password";
+}
+
+export interface RuntimeSecretScope {
+  readonly projectId: string;
+  readonly runId: string;
+  readonly scenarioId: string;
+  readonly dataBinding: string;
+  readonly environment: {
+    readonly id: string;
+    readonly revision: string;
+    readonly approvedOrigin: string;
+  };
 }
 
 export interface RuntimeSecretProvider {
-  resolve(reference: SecretReference): Promise<string>;
+  resolve(
+    reference: SecretReference,
+    scope?: RuntimeSecretScope,
+  ): Promise<string>;
+  dispose?(): void;
 }
 
 export interface PreparedScenarioInputs {

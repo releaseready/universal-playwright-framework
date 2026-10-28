@@ -102,10 +102,50 @@ async function main(): Promise<void> {
   );
   const framework = requireFromConsumer("@universal/playwright-framework") as {
     executeAdapter: typeof executeAdapter;
+    InMemoryRuntimeSecretProvider: typeof import("../src/input-preparation/runtime-login").InMemoryRuntimeSecretProvider;
+    consumeRuntimeLoginInputs: typeof import("../src/input-preparation/runtime-login").consumeRuntimeLoginInputs;
+    withOperatorLoginInputs: typeof import("../src/input-preparation/operator-prompt").withOperatorLoginInputs;
     TestDataFactory: {
       generateUser: typeof import("../fixtures/test-data-factory").TestDataFactory.generateUser;
     };
   };
+  assert.equal(typeof framework.consumeRuntimeLoginInputs, "function");
+  assert.equal(typeof framework.withOperatorLoginInputs, "function");
+  const runtimeScope = {
+    projectId: "owned-project",
+    runId: "owned-run",
+    scenarioId: "outline/row-a",
+    dataBinding: reviewed.binding,
+    environment: {
+      id: "owned-environment",
+      revision: "environment-v1",
+      approvedOrigin: "https://owned.example.test",
+    },
+  };
+  const accountReference = { id: "owned-account", revision: "account-v1" };
+  const runtimeProvider = new framework.InMemoryRuntimeSecretProvider(
+    {
+      scope: runtimeScope,
+      account: accountReference,
+      expiresAt: Date.now() + 60_000,
+    },
+    {
+      username: "SYNTHETIC_INSTALLED_ACCOUNT",
+      password: "SYNTHETIC_INSTALLED_PASSWORD",
+    },
+  );
+  try {
+    assert.equal(
+      await runtimeProvider.resolve(
+        { ...accountReference, field: "password" },
+        runtimeScope,
+      ),
+      "SYNTHETIC_INSTALLED_PASSWORD",
+    );
+    assert.doesNotMatch(JSON.stringify(runtimeProvider), /SYNTHETIC_INSTALLED/);
+  } finally {
+    runtimeProvider.dispose();
+  }
   const user = framework.TestDataFactory.generateUser("band");
   assert.equal(user.userType, "band");
   assert.ok(user.bandMembers && user.bandMembers.length > 0);

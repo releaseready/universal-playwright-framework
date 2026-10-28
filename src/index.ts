@@ -36,3 +36,33 @@ export type {
   AdapterError,
   TrustedAdapterContext,
 } from "./adapter/v1";
+
+export {
+  consumeRuntimeLoginInputs,
+  InMemoryRuntimeSecretProvider,
+  RuntimeLoginError,
+  validateRuntimeLoginRequest,
+} from "./input-preparation/runtime-login";
+export { withOperatorLoginInputs } from "./input-preparation/operator-prompt";
+export type {
+  RuntimeLoginAccount,
+  RuntimeLoginErrorCode,
+  RuntimeLoginRequest,
+  RuntimeLoginResult,
+} from "./input-preparation/runtime-login";
+export type {
+  OperatorTerminalInput,
+  OperatorTerminalOutput,
+} from "./input-preparation/operator-prompt";
+export type {
+  PreparedInputDescriptor,
+  ReviewedDataReferenceInput,
+  ReviewedFixtureFieldPolicy,
+  RuntimeSecretProvider,
+  RuntimeSecretScope,
+  SecretReference,
+} from "./input-preparation";
+export {
+  prepareScenarioInputs,
+  InputPreparationError,
+} from "./input-preparation";
