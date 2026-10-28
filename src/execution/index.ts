@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { lstatSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { performance } from "node:perf_hooks";
@@ -16,6 +16,7 @@ import {
   INPUT_FIXTURE_PATH,
   loadReviewedScenarios,
   REPOSITORY_ROOT,
+  REVIEWED_FEATURE_PATH,
   reviewedFixturePolicy,
 } from "./reviewed-scenarios";
 
@@ -46,11 +47,30 @@ type WorkerStopReason =
 export interface ScenarioExecutionResult {
   readonly scenarioId: string;
   readonly status: ExecutionStatus;
+  readonly cucumber?: CucumberScenarioEvidence;
   readonly cleanupStatus: ResourceCleanupStatus;
   readonly cleanupFailures: readonly string[];
   readonly cleanupFaultInjected: boolean;
   readonly workerStopped: boolean;
   readonly workerStallInjected: boolean;
+}
+
+export type CucumberStepStatus =
+  | "passed"
+  | "failed"
+  | "skipped"
+  | "pending"
+  | "undefined"
+  | "ambiguous"
+  | "unknown";
+
+export interface CucumberScenarioEvidence {
+  readonly featureName: string;
+  readonly scenarioName: string;
+  readonly steps: readonly {
+    readonly name: string;
+    readonly status: CucumberStepStatus;
+  }[];
 }
 
 export interface ExecutionSummary {
@@ -143,6 +163,8 @@ const CUCUMBER_BIN = path.join(
 const CUCUMBER_CONFIG = "cucumber-execution.json";
 const DEFAULT_RUN_TIMEOUT_MS = 90_000;
 const DEFAULT_SCENARIO_TIMEOUT_MS = 30_000;
+const MAX_CUCUMBER_REPORT_BYTES = 256_000;
+const MAX_CUCUMBER_REPORT_STEPS = 100;
 
 function validateOptions(
   options: ExecutionOptions,
@@ -505,21 +527,77 @@ function safeCleanupReport(reportPath: string): CleanupReport | undefined {
   }
 }
 
-function cucumberScenarioPassed(reportPath: string): boolean | undefined {
+function cucumberScenarioEvidence(
+  reportPath: string,
+  expectedScenarioId: string,
+): CucumberScenarioEvidence | undefined {
   try {
+    const reportFile = lstatSync(reportPath);
+    if (
+      !reportFile.isFile() ||
+      reportFile.isSymbolicLink() ||
+      reportFile.size > MAX_CUCUMBER_REPORT_BYTES
+    ) {
+      return undefined;
+    }
     const features = JSON.parse(readFileSync(reportPath, "utf8")) as {
+      name?: string;
+      uri?: string;
       elements?: {
         type?: string;
-        steps?: { result?: { status?: string } }[];
+        name?: string;
+        tags?: { name?: string }[];
+        steps?: { name?: string; result?: { status?: string } }[];
       }[];
     }[];
     const scenarios = features.flatMap((feature) =>
-      (feature.elements ?? []).filter((element) => element.type === "scenario"),
+      (feature.elements ?? [])
+        .filter((element) => element.type === "scenario")
+        .map((scenario) => ({ feature, scenario })),
     );
-    if (scenarios.length !== 1 || !scenarios[0].steps?.length) {
+    if (scenarios.length !== 1) {
       return undefined;
     }
-    return scenarios[0].steps.every((step) => step.result?.status === "passed");
+    const { feature, scenario } = scenarios[0];
+    if (
+      feature.uri !== REVIEWED_FEATURE_PATH ||
+      !scenario.tags?.some(
+        (tag) => tag.name === `@scenario-id=${expectedScenarioId}`,
+      )
+    ) {
+      return undefined;
+    }
+    const businessSteps =
+      scenario.steps?.filter((step) => typeof step.name === "string") ?? [];
+    if (
+      typeof feature.name !== "string" ||
+      feature.name.length > 300 ||
+      typeof scenario.name !== "string" ||
+      scenario.name.length > 300 ||
+      businessSteps.length === 0 ||
+      businessSteps.length > MAX_CUCUMBER_REPORT_STEPS ||
+      businessSteps.some((step) => step.name!.length > 300)
+    ) {
+      return undefined;
+    }
+    const statuses: readonly CucumberStepStatus[] = [
+      "passed",
+      "failed",
+      "skipped",
+      "pending",
+      "undefined",
+      "ambiguous",
+    ];
+    return {
+      featureName: feature.name,
+      scenarioName: scenario.name,
+      steps: businessSteps.map((step) => ({
+        name: step.name!,
+        status: statuses.includes(step.result?.status as CucumberStepStatus)
+          ? (step.result?.status as CucumberStepStatus)
+          : "unknown",
+      })),
+    };
   } catch {
     return undefined;
   }
@@ -722,7 +800,10 @@ async function executeScenario(
   }
 
   const cleanup = safeCleanupReport(cleanupPath);
-  const scenarioPassed = cucumberScenarioPassed(reportPath);
+  const cucumber = cucumberScenarioEvidence(reportPath, scenarioId);
+  const scenarioPassed = cucumber
+    ? cucumber.steps.every((step) => step.status === "passed")
+    : undefined;
   const status =
     scenarioPassed === undefined
       ? "incomplete"
@@ -734,6 +815,7 @@ async function executeScenario(
   return {
     scenarioId,
     status,
+    ...(cucumber ? { cucumber } : {}),
     cleanupStatus: cleanup?.status ?? "unknown",
     cleanupFailures: cleanup?.failures ?? ["cleanup-evidence-missing"],
     cleanupFaultInjected: cleanup?.injectedFailure ?? false,
