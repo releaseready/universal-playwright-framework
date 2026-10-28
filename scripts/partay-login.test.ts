@@ -780,7 +780,7 @@ test("CLI input failures emit only safe structured metadata and no success recei
     assert.deepEqual(JSON.parse(result.stderr), {
       status: "not-verified",
       failureStage: "input-validation",
-      failureClassification: "unknown",
+      failureClassification: "input",
       cleanupStatus: "not-acquired",
       automaticRetryAttempted: false,
     });

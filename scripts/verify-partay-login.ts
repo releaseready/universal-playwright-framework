@@ -45,11 +45,21 @@ async function main(): Promise<void> {
       }
       const [descriptorPath, requestPath, ...extra] = args;
       if (!descriptorPath || !requestPath || extra.length !== 0)
-        throw new RuntimeLoginFailure("input-validation", "not-acquired");
+        throw new RuntimeLoginFailure(
+          "input-validation",
+          "not-acquired",
+          undefined,
+          "input",
+        );
       descriptor = JSON.parse(readFileSync(descriptorPath, "utf8"));
       request = JSON.parse(readFileSync(requestPath, "utf8"));
     } catch {
-      throw new RuntimeLoginFailure("input-validation", "not-acquired");
+      throw new RuntimeLoginFailure(
+        "input-validation",
+        "not-acquired",
+        undefined,
+        "input",
+      );
     }
     const receipt = await promptAndVerifyPartayLogin(descriptor, request, {
       signal: controller.signal,
