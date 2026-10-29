@@ -49,7 +49,7 @@ const fixtureValuesSchema = z
   )
   .superRefine((values, context) => {
     const entries = Object.entries(values);
-    if (entries.length === 0 || entries.length > 32) {
+    if (entries.length > 32) {
       context.addIssue({
         code: "custom",
         message: "Fixture fields are missing or exceed the limit",
@@ -411,6 +411,13 @@ function fixtureFieldsMatchPolicy(
   };
   const fixtureNames = Object.keys(values).sort();
   const policyNames = Object.keys(fieldPolicy).sort();
+  // Empty values are valid only for an explicitly reviewed empty scenario policy.
+  if (fixtureNames.length === 0) {
+    return (
+      policyNames.length === 0 &&
+      Object.prototype.hasOwnProperty.call(policy.scenarioFields, scenarioId)
+    );
+  }
   return (
     fixtureNames.length === policyNames.length &&
     fixtureNames.every((name, index) => {
@@ -682,6 +689,15 @@ export function prepareScenarioInputs(
         "Each approved scenario requires its own valid account reference",
       );
     }
+    if (
+      dataReference?.secret &&
+      account.secretReference !== dataReference.secret.id
+    ) {
+      return fail(
+        "invalid-account-reference",
+        "Account secret does not match the reviewed data reference",
+      );
+    }
     usedAccountReferences.add(fixture.accountReference);
     return {
       id: scenario.id as string,
@@ -690,7 +706,12 @@ export function prepareScenarioInputs(
       values: copyValues(fixture.values),
       account: {
         reference: account.reference,
-        secretReference: { id: account.secretReference },
+        secretReference: {
+          id: account.secretReference,
+          ...(dataReference?.secret
+            ? { revision: dataReference.secret.revision }
+            : {}),
+        },
       },
       cleanup: {
         requested: true as const,
