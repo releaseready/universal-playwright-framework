@@ -293,3 +293,42 @@ For RRDSCRUM-62, retain rather than unnecessarily rerun
   150 steps, zero failed/skipped; installed-package exports and tamper checks.
 - Build, formatting and diff checks passed. These are retained PR #21 results,
   not newly executed RRDWEB-8 results and not customer acceptance.
+
+## Bounded unauthenticated inspection (RRDWEB-8)
+
+`npm run inspect:partay-login -- --approved-one-inspection` is a separate,
+explicit operator entry point, not permission by itself. Run only the independently
+reviewed revision after the owner confirms that single inspection. No credentials,
+descriptor, request file, customer identity or arbitrary target argument is accepted.
+It does not invoke the login consumer, enter values or click Sign in.
+
+The fixed target is the Partay initial document. The isolated inspection guard
+allows that main-frame document once, same-origin GET static resources with matching
+stylesheet/script/image/font types and extensions, and exactly GET **fetch** requests
+for `/agent/avatar-config`, `/meta/taxonomies` and `/health`. Query strings, other
+dynamic paths/methods/types, other origins, further document navigations and
+WebSockets are denied before transport. Service workers are blocked by the reused
+fresh-context lifecycle. Fetches use no redirects or retries; HTTP 30x responses are
+never passed to the browser. Cookies and Authorization are withheld and Set-Cookie
+is not forwarded. This temporary guard does not change production login policy.
+
+The observer requires a visible, unambiguous login overlay, empty username/password
+fields, a password-type field and a button-type eye labelled Show password. It
+clicks that eye once, records before/after type and fixed known accessible labels,
+and reports overlay/logo presence/visibility and whether the logo text is Partay.
+Unknown text is reported as `other`, never copied. It does not assert successful
+login or comprehensive UI coverage. No screenshots, trace, storage state, raw DOM,
+field values or request URLs are emitted. A script can still initiate a denied
+request; counts report blocking, not permission or application correctness.
+
+`observed` is returned only after the shared bounded lifecycle finishes cleanup.
+Failure reports preserve separate cleanup status; uncertain cleanup is not success.
+No automatic retry is supported. This command's fixed flag is an operator guard,
+not a durable consumed-authorization ledger: the operator must not invoke it again
+without fresh permission. The CLI must not be used for customer acceptance login.
+
+Offline proof: `npm run test:login-inspection` uses owned loopback servers and
+synthetic controls, with zero-contact rejection, all five redirect statuses,
+empty-field click, evidence sanitization and independent cleanup checks. The test
+of the fixed entry point rewrites its transport to the owned fixture before any
+network fetch; it never contacts Partay. These tests do not verify customer UI.
