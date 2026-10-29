@@ -51,7 +51,8 @@
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
     "prepare": "npm run build",
     "test:login-inspection": "npm run build:cucumber && node --test dist/cucumber/scripts/login-inspection.test.js",
-    "inspect:partay-login": "npm run build:cucumber && node dist/cucumber/scripts/inspect-partay-login.js"
+    "inspect:partay-login": "npm run build:cucumber && node dist/cucumber/scripts/inspect-partay-login.js",
+    "test:authentication-only": "npm run build:cucumber && node --test dist/cucumber/scripts/authentication-only.test.js"
   },
   "keywords": [
     "playwright",

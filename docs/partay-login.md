@@ -342,3 +342,64 @@ synthetic controls, with zero-contact rejection, all five redirect statuses,
 non-activation even with hostile event handlers, evidence sanitization and independent cleanup checks. The test
 of the fixed entry point rewrites its transport to the owned fixture before any
 network fetch; it never contacts Partay. These tests do not verify customer UI.
+
+## Dormant authentication-only binding (RRDWEB-8)
+
+A trusted in-process composition may explicitly select
+`authenticationOnlyPolicy: PARTAY_AUTHENTICATION_ONLY_POLICY` (`partay-authentication-only`,
+`v1`) on the existing `verifyPartayLogin` or `promptAndVerifyPartayLogin` call.
+This is a reviewed implementation choice, **not permission to submit credentials**.
+There is no CLI activation, new credential transport, or generated run approval.
+Calls without this option retain the existing policy. Central must preserve and
+interpret the scoped receipt before adopting this option; it must not discard it
+and turn `completed` into full customer acceptance or defect evidence.
+
+The policy admits only the exact initial document once, one initial GET each to
+`/agent/avatar-config`, `/meta/taxonomies` and `/health`, one form-encoded POST to
+`/auth/login`, then one GET to `/me`. One additional `/health` GET is budgeted after
+successful authentication. Budgets are consumed before dispatch. The login button
+must visibly say “Sign in”, the password control must declare `current-password`,
+and the registration section must be hidden, both before filling and at POST
+admission. The runner never changes the application's internal authentication mode.
+
+Only successful 2xx critical responses plus the exact URL, visible exact Partay
+logo and hidden login overlay can complete this scope. `#onboard` must exist and
+remain hidden, and the normal `#bottomnav` must be visible. Missing/ambiguous gates,
+onboarding, 428/email verification, unsuccessful responses, redirects, retries or
+unknown activity produce `not-verified`. No profile or response body is inspected.
+
+After `/me` succeeds, six known background GETs are **aborted**, not fulfilled:
+`/groups`, `/agent/greeting`, `/me/notifications`, `/dm`,
+`/connections/requests` and `/events`. Fixed exclusion counters distinguish these
+from a clean, unrestricted application flow. The same requests before this phase,
+wrong methods, `/agent/characters`, location updates, unknown paths, external
+resources, other document requests and WebSockets fail closed. Service workers are
+blocked and the fresh context has no granted permissions. No geolocation grant,
+response mock, script replacement or application-state rewrite is used.
+
+An authentication-only success includes `authenticationOnly.scope`,
+`downstream: "untested-blocked"`, `productDefectEvidence: false`, the policy binding
+and fixed category counts. This proves neither the home page nor downstream
+features work. Even a logo mismatch in this restricted mode is not classified as
+product-defect evidence. The exact three declared scripts and two font stylesheets
+listed in [retained resource metadata](./partay-declared-resources.json) are
+deny-only exclusions: one GET of the exact resource type and URL per run, only
+after initial-document admission. Every matched request is aborted before
+transport. A successful abort increments `knownBlockedResources`, separately
+from post-authentication background counts. Missing/failed denial, excess counts,
+navigation, other methods/types or any URL/query variant remain fatal. No font,
+script or other external response is fetched or mocked; presentation and 3D
+functionality are outside this authentication-only coverage. Central receipt
+preservation must be implemented before activation.
+
+The shared transport settles admitted requests before normal teardown, bounded by
+2 seconds and the existing overall deadline/cancellation. Cleanup remains an
+independent bounded operation. An unfinished or failed transport cannot yield
+success; confirmed browser cleanup still does not revoke a server session.
+
+Static policy provenance: the October 29 document-only observation had SHA256
+`ce8f78c870552fce8d914786ed6ca9f4fd3b1374bf5e178517e796fac9a3b627`.
+It showed `#authGo` → `authSubmit()` → `login()` in sign-in mode, POST `/auth/login`,
+and awaited GET `/me` before overlay dismissal. Server effects and live customer
+acceptance have not been verified. Tests use owned loopback pages and synthetic
+canaries; no actual customer run is part of this change.

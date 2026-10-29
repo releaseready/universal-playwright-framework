@@ -85,6 +85,13 @@ export {
 } from "./customer-login/partay";
 export type { RuntimeLoginBrowserOptions } from "./execution/runtime-login-browser";
 
+export { PARTAY_AUTHENTICATION_ONLY_POLICY } from "./customer-login/authentication-only";
+export type { AuthenticationOnlyBinding } from "./customer-login/authentication-only";
+export type {
+  PartayLoginOptions,
+  PartayLoginResult,
+} from "./customer-login/partay";
+
 // Public offline review boundary; validation never grants execution permission.
 export { validateFeatureFile } from "./validation/feature-validator";
 export type {
