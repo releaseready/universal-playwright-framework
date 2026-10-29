@@ -95,30 +95,23 @@ for (const status of [301, 302, 303, 307, 308]) {
   }
 }
 
-test("Given empty login fields, observe the overlay and logo and click the eye exactly once without submission", async () => {
+test("Given login controls, observation records initial facts and leaves eye behavior unverified", async () => {
   await fixture(async (url, hits) => {
     await withFreshLoginPage(async (page) => {
       await guardInspectionRequests(page.context(), page, url);
       await page.goto(url);
-      await page.evaluate(() => {
-        document.querySelector(".pw-eye")?.addEventListener("click", () => {
-          const password =
-            document.querySelector<HTMLInputElement>("#password")!;
-          password.type = "text";
-          document
-            .querySelector(".pw-eye")
-            ?.setAttribute("aria-label", "Hide password");
-          document.body.dataset.clicks = String(
-            Number(document.body.dataset.clicks ?? 0) + 1,
-          );
-        });
-      });
       const evidence = await observeLoginControls(page);
       assert.deepEqual(evidence.password, {
-        before: { type: "password", label: "Show password" },
-        after: { type: "text", label: "Hide password" },
-        empty: true,
-        eyeClicks: 1,
+        present: true,
+        visible: true,
+        type: "password",
+      });
+      assert.deepEqual(evidence.eye, {
+        present: true,
+        visible: true,
+        label: "Show password",
+        behavior: "unverified",
+        activations: 0,
       });
       assert.deepEqual(evidence.overlay, { present: true, visible: true });
       assert.deepEqual(evidence.brandLogo, {
@@ -126,7 +119,6 @@ test("Given empty login fields, observe the overlay and logo and click the eye e
         visible: true,
         text: "Partay",
       });
-      assert.equal(await page.locator("body").getAttribute("data-clicks"), "1");
     });
     assert.deepEqual(hits, ["GET /"]);
   });
@@ -177,54 +169,27 @@ test("Given forbidden origins, resource types and forms, none reach a destinatio
   );
 });
 
-test("Given nonempty fields or unexpected labels, inspection refuses the click and never exposes values", async () => {
-  await fixture(async (url, hits) => {
-    await withFreshLoginPage(async (page) => {
-      await guardInspectionRequests(page.context(), page, url);
-      await page.goto(url);
-      await page.locator("#password").fill("SYNTHETIC_PRIVATE");
-      await assert.rejects(observeLoginControls(page), (error) => {
-        assert.ok(error instanceof Error);
-        assert.equal(error.message, "Inspection binding unavailable");
-        return true;
-      });
-      assert.equal(
-        await page.locator("#password").getAttribute("type"),
-        "password",
-      );
-      await page.locator("#password").fill("");
-      await page
-        .locator(".pw-eye")
-        .evaluate((element) =>
-          element.setAttribute("aria-label", "SYNTHETIC_PRIVATE"),
-        );
-      await assert.rejects(
-        observeLoginControls(page),
-        /Inspection binding unavailable/,
-      );
-    });
-    assert.deepEqual(hits, ["GET /"]);
-  });
-});
-
-test("Given unexpected logo or post-click label text, evidence contains only fixed categories", async () => {
+test("Given private field values and unexpected labels, observation exposes only fixed categories", async () => {
   await fixture(async (url) => {
     await withFreshLoginPage(async (page) => {
       await guardInspectionRequests(page.context(), page, url);
       await page.goto(url);
+      await page.locator("#password").fill("SYNTHETIC_PRIVATE");
       await page.evaluate(() => {
         document.querySelector("#brandLogo")!.textContent = "SYNTHETIC_PRIVATE";
         document
-          .querySelector(".pw-eye")
-          ?.addEventListener("click", () =>
-            document
-              .querySelector(".pw-eye")
-              ?.setAttribute("aria-label", "SYNTHETIC_PRIVATE"),
-          );
+          .querySelector(".pw-eye")!
+          .setAttribute("aria-label", "SYNTHETIC_PRIVATE");
       });
       const result = await observeLoginControls(page);
       assert.equal(result.brandLogo.text, "other");
-      assert.equal(result.password.after.label, "other");
+      assert.equal(result.eye.label, "other");
+      assert.equal(result.eye.behavior, "unverified");
+      assert.equal(result.eye.activations, 0);
+      assert.equal(
+        await page.locator("#password").inputValue(),
+        "SYNTHETIC_PRIVATE",
+      );
       assert.ok(!JSON.stringify(result).includes("SYNTHETIC_PRIVATE"));
     });
   });
@@ -333,7 +298,8 @@ test("Given the fixed inspection entry point with an owned transport, the receip
     assert.equal(closed, true);
     assert.equal(result.cleanupStatus, "confirmed");
     assert.equal(result.status, "observed");
-    assert.equal(result.password.eyeClicks, 1);
+    assert.equal(result.eye.activations, 0);
+    assert.equal(result.eye.behavior, "unverified");
     assert.deepEqual(hits, ["GET /"]);
     assert.ok(!JSON.stringify(result).includes(url));
   });
@@ -347,10 +313,11 @@ test("Given the login overlay is absent, no similarly named eye elsewhere is cli
       await page
         .locator("#overlay")
         .evaluate((element) => element.removeAttribute("id"));
-      await assert.rejects(
-        observeLoginControls(page),
-        /Inspection binding unavailable/,
-      );
+      const result = await observeLoginControls(page);
+      assert.deepEqual(result.overlay, { present: false, visible: false });
+      assert.equal(result.eye.present, false);
+      assert.equal(result.eye.behavior, "unverified");
+      assert.equal(result.eye.activations, 0);
     });
   });
 });
@@ -449,49 +416,61 @@ for (const kind of ["cancel", "timeout"] as const) {
   });
 }
 
-for (const timing of [
-  "mouseover",
-  "window-click",
-  "document-click",
-  "target-click",
-] as const) {
-  for (const field of ["username", "password"] as const) {
-    test(`Given ${field} is populated during ${timing}, no eye activation occurs`, async () => {
-      await fixture(async (url) => {
-        await withFreshLoginPage(async (page) => {
-          await guardInspectionRequests(page.context(), page, url);
-          await page.goto(url);
-          await page.evaluate(
-            ({ timing, field }) => {
-              const eye = document.querySelector<HTMLButtonElement>(".pw-eye")!;
-              (timing === "document-click"
-                ? document
-                : timing === "target-click"
-                  ? eye
-                  : window
-              ).addEventListener(
-                timing === "mouseover" ? "mouseover" : "click",
-                (event) => {
-                  if (event.target === eye)
-                    document.querySelector<HTMLInputElement>(
-                      `#${field}`,
-                    )!.value = "SYNTHETIC_PRIVATE";
-                },
-                true,
-              );
-              eye.addEventListener("click", () => {
-                document.body.dataset.activations = "1";
-              });
+test("Given hostile capture handlers, observation never activates any control or submits", async () => {
+  await fixture(async (url, hits) => {
+    await withFreshLoginPage(async (page) => {
+      await guardInspectionRequests(page.context(), page, url);
+      await page.goto(url);
+      await page.evaluate(() => {
+        const eye = document.querySelector<HTMLButtonElement>(".pw-eye")!;
+        document.addEventListener(
+          "click",
+          () => {
+            document.querySelector<HTMLInputElement>("#password")!.value =
+              "SYNTHETIC_PRIVATE";
+          },
+          true,
+        );
+        eye.addEventListener(
+          "click",
+          () => {
+            document.body.dataset.activations = "1";
+            document
+              .querySelector<HTMLFormElement>("#overlay")!
+              .requestSubmit();
+          },
+          true,
+        );
+        for (const name of [
+          "mouseover",
+          "pointerdown",
+          "focus",
+          "keydown",
+          "submit",
+        ]) {
+          document.addEventListener(
+            name,
+            () => {
+              document.body.dataset.interactions = "1";
             },
-            { timing, field },
+            true,
           );
-          await assert.rejects(observeLoginControls(page));
-          assert.equal(
-            await page.locator("body").getAttribute("data-activations"),
-            null,
-          );
-        });
+        }
       });
+      const result = await observeLoginControls(page).catch(() => undefined);
+      assert.equal(
+        await page.locator("body").getAttribute("data-activations"),
+        null,
+      );
+      assert.equal(
+        await page.locator("body").getAttribute("data-interactions"),
+        null,
+      );
+      assert.ok(result);
+      assert.equal(result.eye.activations, 0);
+      assert.equal(result.eye.behavior, "unverified");
+      assert.equal(await page.locator("#password").inputValue(), "");
     });
-  }
-}
+    assert.deepEqual(hits, ["GET /"]);
+  });
+});

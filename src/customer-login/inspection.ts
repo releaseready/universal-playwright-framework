@@ -141,111 +141,35 @@ export async function observeLoginControls(page: Page) {
         : "other"
       : "absent",
   };
-  const password = page.locator("#overlay #password");
-  const username = page.locator("#overlay #username");
-  const eye = page.locator("#overlay button.pw-eye");
-  if (
-    !overlay.visible ||
-    (await password.count()) !== 1 ||
-    (await username.count()) !== 1 ||
-    (await eye.count()) !== 1 ||
-    !(await password.isVisible()) ||
-    !(await eye.isVisible()) ||
-    (await password.inputValue()) !== "" ||
-    (await username.inputValue()) !== "" ||
-    (await eye.getAttribute("type")) !== "button" ||
-    (await eye.getAttribute("aria-label")) !== "Show password" ||
-    (await password.getAttribute("type")) !== "password"
-  ) {
-    throw new Error("Inspection binding unavailable");
-  }
-  // Defense in depth: no form submission is part of this observation.
-  await page.evaluate(() =>
-    document.addEventListener(
-      "submit",
-      (event) => event.preventDefault(),
-      true,
-    ),
-  );
-  const before = { type: "password", label: "Show password" };
-  const activation = await eye.evaluateHandle((button) => {
-    const state = { blocked: false, activations: 0 };
-    const guard = (event: Event): void => {
-      if (!event.composedPath().includes(button)) return;
-      const accounts = document.querySelectorAll("#overlay #username");
-      const passwords = document.querySelectorAll("#overlay #password");
-      const eyes = document.querySelectorAll("#overlay button.pw-eye");
-      const account = accounts[0];
-      const password = passwords[0];
-      // Synchronous dispatch-time check, after pointer/hover handlers and before
-      // the target's activation handlers. Never rely on earlier awaited reads.
-      if (
-        accounts.length !== 1 ||
-        passwords.length !== 1 ||
-        eyes.length !== 1 ||
-        eyes[0] !== button ||
-        !(account instanceof HTMLInputElement) ||
-        !(password instanceof HTMLInputElement) ||
-        !(button instanceof HTMLButtonElement) ||
-        account.value !== "" ||
-        password.value !== "" ||
-        password.type !== "password" ||
-        button.type !== "button" ||
-        button.disabled ||
-        button.getAttribute("aria-label") !== "Show password" ||
-        state.activations !== 0
-      ) {
-        state.blocked = true;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return;
-      }
-      if (event.currentTarget === button) state.activations++;
-    };
-    // Check early for hover changes, and again at the target after intervening
-    // document/ancestor capture handlers, before the usual bubble activation.
-    window.addEventListener("click", guard, true);
-    button.addEventListener("click", guard, true);
-    return {
-      state,
-      remove: () => {
-        window.removeEventListener("click", guard, true);
-        button.removeEventListener("click", guard, true);
-      },
-    };
-  });
-  try {
-    await eye.click({ noWaitAfter: true });
-    const state = await activation.evaluate((activation) => activation.state);
-    if (state.blocked || state.activations !== 1)
-      throw new Error("Inspection activation blocked");
-  } finally {
-    await activation
-      .evaluate((activation) => activation.remove())
-      .catch(() => undefined);
-    await activation.dispose();
-  }
-  const type = await password.getAttribute("type");
-  const label = await eye.getAttribute("aria-label");
-  if (
-    (await password.inputValue()) !== "" ||
-    (await username.inputValue()) !== ""
-  )
-    throw new Error("Inspection field state changed");
+  const password = await presence(page, "#overlay #password");
+  const eye = await presence(page, "#overlay button.pw-eye");
+  const type = password.present
+    ? await page.locator("#overlay #password").getAttribute("type")
+    : null;
+  const label = eye.present
+    ? await page.locator("#overlay button.pw-eye").getAttribute("aria-label")
+    : null;
+  // Observation only: do not focus, hover, dispatch events, read values or click.
   return {
     overlay,
     brandLogo,
     password: {
-      before,
-      after: {
-        type: type === "password" || type === "text" ? type : "other",
-        label:
-          label === "Show password" || label === "Hide password"
-            ? label
-            : "other",
-      },
-      empty: true,
-      eyeClicks: 1,
+      ...password,
+      type: !password.present
+        ? "absent"
+        : type === "password" || type === "text"
+          ? type
+          : "other",
+    },
+    eye: {
+      ...eye,
+      label: !eye.present
+        ? "absent"
+        : label === "Show password" || label === "Hide password"
+          ? label
+          : "other",
+      behavior: "unverified" as const,
+      activations: 0 as const,
     },
   };
 }

@@ -312,17 +312,19 @@ fresh-context lifecycle. Fetches use no redirects or retries; HTTP 30x responses
 never passed to the browser. Cookies and Authorization are withheld and Set-Cookie
 is not forwarded. This temporary guard does not change production login policy.
 
-The observer requires a visible, unambiguous login overlay, empty username/password
-fields, a password-type field and a button-type eye labelled Show password. It
-uses a synchronous capture-phase click guard to recheck both empty fields and
-exact bindings after hover/pointer activity and before target activation. If a field
-was populated in that interval, the guard cancels the click before the eye handler.
-It clicks that eye once, records before/after type and fixed known accessible labels,
-and reports overlay/logo presence/visibility and whether the logo text is Partay.
-Unknown text is reported as `other`, never copied. It does not assert successful
-login or comprehensive UI coverage. No screenshots, trace, storage state, raw DOM,
-field values or request URLs are emitted. A script can still initiate a denied
-request; counts report blocking, not permission or application correctness.
+The observer records overlay/logo presence and visibility, whether the logo text
+is Partay, and password-field/eye presence, initial type and fixed known accessible
+labels. Missing controls are reported as absent; ambiguous duplicate bindings fail
+closed. Unknown text is reported as `other`, never copied. It does not read field
+values, focus, hover, dispatch events, click controls or submit. Eye behavior is
+always **unverified**, with zero activations: this narrower observation cannot
+establish reveal/hide behavior or pointer/keyboard usability. Existing local
+synthetic eye tests remain separate evidence, not customer behavior proof.
+
+It does not assert successful login or comprehensive UI coverage. No screenshots,
+trace, storage state, raw DOM, field values or request URLs are emitted. A page's
+own scripts can still initiate denied requests; blocking counts are not permission
+or application correctness.
 
 `observed` is returned only after the shared bounded lifecycle finishes cleanup.
 Failure reports preserve separate cleanup status; uncertain cleanup is not success.
@@ -332,6 +334,6 @@ without fresh permission. The CLI must not be used for customer acceptance login
 
 Offline proof: `npm run test:login-inspection` uses owned loopback servers and
 synthetic controls, with zero-contact rejection, all five redirect statuses,
-empty-field click, evidence sanitization and independent cleanup checks. The test
+non-activation even with hostile event handlers, evidence sanitization and independent cleanup checks. The test
 of the fixed entry point rewrites its transport to the owned fixture before any
 network fetch; it never contacts Partay. These tests do not verify customer UI.
