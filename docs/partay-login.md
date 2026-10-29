@@ -212,6 +212,19 @@ The shared browser displayed in an editor is not reused for credential entry.
 
 ## Local checks and retained handover evidence
 
+### Offline login UI candidate tests
+
+`npm run test:customer-login-ui` exercises an owned, self-contained HTML login
+fixture only.
+Readable Cucumber scenarios cover required-field validity without a form
+submission, one local submission by Enter, password masking and reveal/hide
+state with value preservation, keyboard focus and accessible control state,
+and password-value redaction in the reusable `BasePage.fillInput` interaction
+log. The fixture and expected UI behavior are synthetic, not observed Partay
+controls. Site UI and password-eye behavior remain unverified until authorized
+inspection. These results are local test evidence, not customer-login or
+acceptance evidence.
+
 ### Deferred private-account-file input
 
 Private-account-file input is deferred and excluded from the MVP. The CLI

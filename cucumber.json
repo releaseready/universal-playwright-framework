@@ -4,7 +4,8 @@
     "tags": "not @web-run-inputs and not @retry-regression and not @web-readable-results and not @local-package-adapter",
     "require": [
       "dist/cucumber/features/support/hooks.js",
-      "dist/cucumber/features/steps/synthetic.steps.js"
+      "dist/cucumber/features/steps/synthetic.steps.js",
+      "dist/cucumber/features/steps/login-ui.steps.js"
     ],
     "format": ["progress", "json:reports/cucumber-results.json"]
   }

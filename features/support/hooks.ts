@@ -10,6 +10,8 @@ import {
 } from "@cucumber/cucumber";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { createServer, type Server } from "node:http";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { closeRuntime } from "./cleanup-runtime";
 import { getStepTimeoutMs } from "./step-timeout";
 
@@ -17,6 +19,7 @@ class SyntheticWorld extends World {
   browser!: Browser;
   baseUrl!: string;
   page?: Page;
+  interactionLogs?: string[];
 
   constructor(options: IWorldOptions) {
     super(options);
@@ -29,11 +32,22 @@ setWorldConstructor(SyntheticWorld);
 let browser: Browser | undefined;
 let server: Server | undefined;
 let baseUrl: string | undefined;
+let loginFixture: string | undefined;
 
 BeforeAll(async function () {
+  loginFixture = await readFile(
+    path.resolve("scripts/fixtures/login-ui.html"),
+    "utf8",
+  );
   browser = await chromium.launch({ timeout: 10_000 });
   server = createServer((request, response) => {
-    if (request.url !== "/") {
+    if (request.url === "/login-ui" && request.method === "GET") {
+      response
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(loginFixture);
+      return;
+    }
+    if (request.url !== "/" || request.method !== "GET") {
       response.writeHead(404).end();
       return;
     }

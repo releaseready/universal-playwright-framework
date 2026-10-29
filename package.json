@@ -32,6 +32,7 @@
     "build:cucumber": "tsc --project tsconfig.cucumber.json",
     "test:input-preparation": "npm run build:cucumber && cucumber-js --config cucumber-input-preparation.json && node --test dist/cucumber/scripts/data-references.test.js dist/cucumber/scripts/runtime-login.test.js",
     "test:customer-login": "npm run build:cucumber && node --test dist/cucumber/scripts/partay-login.test.js",
+    "test:customer-login-ui": "npm run build:cucumber && cucumber-js --config cucumber-login-ui.json",
     "verify:partay-login": "npm run build:cucumber && node dist/cucumber/scripts/verify-partay-login.js",
     "test:validation": "npm run build:cucumber && node --test dist/cucumber/scripts/feature-validation.test.js",
     "test:features": "npm run build:cucumber && cucumber-js --config cucumber.json",

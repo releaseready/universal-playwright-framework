@@ -3,7 +3,7 @@
  * Provides common functionality and utilities for page interactions
  */
 
-import { Page, Locator, expect } from "@playwright/test";
+import { Page, Locator } from "@playwright/test";
 import { Logger } from "../utils/logger";
 
 export abstract class BasePage {
@@ -106,7 +106,7 @@ export abstract class BasePage {
       await locator.clear();
     }
     await locator.fill(value);
-    this.logger.info(`Filled input with value: ${value}`);
+    this.logger.info("Filled input field");
   }
 
   /**
