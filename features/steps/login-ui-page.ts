@@ -52,4 +52,13 @@ export class SyntheticLoginPage extends BasePage {
       this.page.getByRole("button", { name: "Open dialog" }),
     );
   }
+
+  async interactWithSensitiveTextLocator(text: string): Promise<void> {
+    const locator = this.page.getByRole("button", { name: text });
+    await this.clickElement(locator);
+    await this.scrollToElement(locator);
+    await this.hoverElement(locator);
+    await this.doubleClickElement(locator);
+    await this.rightClickElement(locator);
+  }
 }

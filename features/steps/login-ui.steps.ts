@@ -11,6 +11,7 @@ const syntheticCookie = "synthetic-cookie-secret";
 const syntheticStorageToken = "synthetic-storage-token";
 const syntheticUrlToken = "synthetic-url-token";
 const syntheticDialogMessage = "synthetic-dialog-private-message";
+const syntheticLocatorText = "synthetic-locator-private-value";
 const syntheticSecrets = [
   syntheticPassword,
   syntheticOption,
@@ -92,6 +93,15 @@ When(
 );
 
 When(
+  "I use shared locator helpers with sensitive text",
+  async function (this: SyntheticWorld) {
+    await captureInteractionLogs(this, () =>
+      loginPage(this).interactWithSensitiveTextLocator(syntheticLocatorText),
+    );
+  },
+);
+
+When(
   "I enter a synthetic password without submitting",
   async function (this: SyntheticWorld) {
     await loginPage(this).enterPassword(syntheticPassword);
@@ -133,6 +143,29 @@ Then(
     );
     assert.equal(
       logs.some((entry) => entry.includes(syntheticDialogMessage)),
+      false,
+    );
+  },
+);
+
+Then(
+  "locator interaction logs are emitted without that text",
+  function (this: SyntheticWorld) {
+    const logs = this.interactionLogs ?? [];
+    for (const message of [
+      "Clicked element",
+      "Scrolled to element",
+      "Hovered over element",
+      "Double clicked element",
+      "Right clicked element",
+    ]) {
+      assert.ok(
+        logs.some((entry) => entry.includes(message)),
+        `expected an interaction log containing "${message}"`,
+      );
+    }
+    assert.equal(
+      logs.some((entry) => entry.includes(syntheticLocatorText)),
       false,
     );
   },
@@ -188,6 +221,7 @@ When(
   async function (this: SyntheticWorld) {
     const account = this.page!.getByRole("textbox", { name: "Account name" });
     await account.focus();
+    await this.page!.keyboard.press("Tab");
     await this.page!.keyboard.press("Tab");
     await this.page!.keyboard.press("Tab");
     await this.page!.keyboard.press("Tab");

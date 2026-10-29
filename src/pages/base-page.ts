@@ -54,7 +54,7 @@ export abstract class BasePage {
   async takeScreenshot(name?: string): Promise<Buffer> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const filename = name || `screenshot-${timestamp}`;
-    this.logger.info(`Taking screenshot: ${filename}`);
+    this.logger.info("Taking screenshot");
     return await this.page.screenshot({
       path: `screenshots/${filename}.png`,
       fullPage: true,
@@ -90,7 +90,7 @@ export abstract class BasePage {
   ): Promise<void> {
     await this.waitForElement(locator);
     await locator.click(options);
-    this.logger.info(`Clicked element: ${locator}`);
+    this.logger.info("Clicked element");
   }
 
   /**
@@ -177,7 +177,7 @@ export abstract class BasePage {
    */
   async scrollToElement(locator: Locator): Promise<void> {
     await locator.scrollIntoViewIfNeeded();
-    this.logger.info(`Scrolled to element: ${locator}`);
+    this.logger.info("Scrolled to element");
   }
 
   /**
@@ -186,7 +186,7 @@ export abstract class BasePage {
   async hoverElement(locator: Locator): Promise<void> {
     await this.waitForElement(locator);
     await locator.hover();
-    this.logger.info(`Hovered over element: ${locator}`);
+    this.logger.info("Hovered over element");
   }
 
   /**
@@ -195,7 +195,7 @@ export abstract class BasePage {
   async doubleClickElement(locator: Locator): Promise<void> {
     await this.waitForElement(locator);
     await locator.dblclick();
-    this.logger.info(`Double clicked element: ${locator}`);
+    this.logger.info("Double clicked element");
   }
 
   /**
@@ -204,7 +204,7 @@ export abstract class BasePage {
   async rightClickElement(locator: Locator): Promise<void> {
     await this.waitForElement(locator);
     await locator.click({ button: "right" });
-    this.logger.info(`Right clicked element: ${locator}`);
+    this.logger.info("Right clicked element");
   }
 
   /**

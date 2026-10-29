@@ -20,6 +20,11 @@ Feature: Review supported login controls on an owned synthetic form
     When I open a synthetic dialog with a private message
     Then the dialog interaction log is emitted without its message
 
+  Scenario: Locator text is redacted from shared interaction logs
+    Given the locally served synthetic login form is open
+    When I use shared locator helpers with sensitive text
+    Then locator interaction logs are emitted without that text
+
   Scenario: Keyboard users can reveal a password without submitting
     Given the locally served synthetic login form is open
     When I enter a synthetic password without submitting
