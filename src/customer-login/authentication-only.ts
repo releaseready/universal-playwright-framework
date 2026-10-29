@@ -1,3 +1,4 @@
+import { DECLARED_BLOCKED_RESOURCES } from "./declared-resources";
 import type { Page, Request } from "@playwright/test";
 import type { LoginRequestPolicy } from "../execution/runtime-login-browser";
 import { RuntimeLoginFailure } from "../input-preparation/runtime-login";
@@ -57,6 +58,10 @@ export function createAuthenticationOnlyPolicy(page: Page, targetUrl: string) {
   const excluded = Object.fromEntries(
     BACKGROUND_CATEGORIES.map((category) => [category, 0]),
   );
+  const blockedResources = Object.fromEntries(
+    DECLARED_BLOCKED_RESOURCES.map((resource) => [resource.category, 0]),
+  );
+  let pendingDenials = 0;
   let armed = false;
   let authenticated = false;
   let identityConfirmed = false;
@@ -77,6 +82,27 @@ export function createAuthenticationOnlyPolicy(page: Page, targetUrl: string) {
     used.set(key, count + 1);
   };
   const policy: LoginRequestPolicy = {
+    denyKnownResource(request) {
+      if (
+        failed ||
+        !used.has("document") ||
+        request.isNavigationRequest() ||
+        request.method() !== "GET"
+      )
+        return undefined;
+      const resource = DECLARED_BLOCKED_RESOURCES.find(
+        (entry) =>
+          entry.url === request.url() &&
+          entry.resourceType === request.resourceType(),
+      );
+      if (!resource) return undefined;
+      take(`denied:${resource.category}`);
+      pendingDenials++;
+      return () => {
+        pendingDenials--;
+        blockedResources[resource.category]++;
+      };
+    },
     async allow(request: Request) {
       if (failed) return fail();
       const url = new URL(request.url());
@@ -112,7 +138,7 @@ export function createAuthenticationOnlyPolicy(page: Page, targetUrl: string) {
         return true;
       }
       if (path === "/auth/login" && request.method() === "POST") {
-        if (!armed || !used.has("document")) return fail();
+        if (!armed || pendingDenials || !used.has("document")) return fail();
         take("login");
         const contentType = await request.headerValue("content-type");
         if (
@@ -128,7 +154,7 @@ export function createAuthenticationOnlyPolicy(page: Page, targetUrl: string) {
         } catch {
           return fail();
         }
-        if (failed) return fail();
+        if (failed || pendingDenials) return fail();
         return true;
       }
       if (path === "/me" && request.method() === "GET") {
@@ -143,6 +169,9 @@ export function createAuthenticationOnlyPolicy(page: Page, targetUrl: string) {
       }
       return fail();
     },
+    assertDispatchable(request) {
+      if (failed || (request.method() === "POST" && pendingDenials)) fail();
+    },
     response(request, status) {
       if (failed) return fail();
       if (status < 200 || status >= 300) return fail();
@@ -151,14 +180,15 @@ export function createAuthenticationOnlyPolicy(page: Page, targetUrl: string) {
       if (path === "/me") identityConfirmed = true;
     },
     assertComplete() {
-      if (failed || !authenticated || !identityConfirmed) fail();
+      if (failed || pendingDenials || !authenticated || !identityConfirmed)
+        fail();
     },
   };
   return {
     ...policy,
     async armSubmission() {
       await assertSignInMode(page);
-      if (armed || failed) return fail();
+      if (armed || failed || pendingDenials) return fail();
       armed = true;
     },
     snapshot() {
@@ -170,6 +200,10 @@ export function createAuthenticationOnlyPolicy(page: Page, targetUrl: string) {
         criticalRequests: {
           loginSucceeded: authenticated,
           identityReadSucceeded: identityConfirmed,
+        },
+        knownBlockedResources: {
+          total: Object.values(blockedResources).reduce((a, b) => a + b, 0),
+          categories: { ...blockedResources },
         },
         excludedBackgroundRequests: Object.values(excluded).reduce(
           (a, b) => a + b,

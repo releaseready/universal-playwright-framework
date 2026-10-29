@@ -408,3 +408,211 @@ test("Given forbidden activity races an admitted mode check, the pending login P
     }),
   );
 });
+
+test("Given the five exact declared resources, abort each before transport and still verify authentication-only", async () => {
+  const { DECLARED_BLOCKED_RESOURCES } = await import(
+    "../src/customer-login/declared-resources"
+  );
+  const evidence = await import("../docs/partay-declared-resources.json");
+  assert.deepEqual(DECLARED_BLOCKED_RESOURCES, evidence.resources);
+  await fixture(async (url, hits) => {
+    let externalTransports = 0;
+    await withFreshLoginPage(async (page) => {
+      const context = page.context();
+      const register = context.route.bind(context);
+      context.route = async (matcher, handler) =>
+        register(matcher, async (route, request) => {
+          if (new URL(request.url()).origin !== new URL(url).origin)
+            route.fetch = async () => {
+              externalTransports++;
+              throw new Error("No external transport permitted in fixture");
+            };
+          await handler(route, request);
+        });
+      const policy = createAuthenticationOnlyPolicy(page, url);
+      await guardLoginRequests(context, new URL(url).origin, url, policy);
+      await page.goto(url);
+      await page.evaluate(async (resources) => {
+        for (const resource of resources)
+          await new Promise<void>((resolve) => {
+            if (resource.resourceType === "script") {
+              const script = document.createElement("script");
+              script.type = "module";
+              script.onload = script.onerror = () => resolve();
+              script.src = resource.url;
+              document.head.append(script);
+            } else {
+              const link = document.createElement("link");
+              link.rel = "stylesheet";
+              link.onload = link.onerror = () => resolve();
+              link.href = resource.url;
+              document.head.append(link);
+            }
+          });
+      }, DECLARED_BLOCKED_RESOURCES);
+      await policy.armSubmission();
+      await page.evaluate(async () => {
+        await fetch("/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        });
+        await fetch("/me");
+      });
+      policy.assertComplete();
+      assert.equal(policy.snapshot().knownBlockedResources.total, 5);
+      assert.equal(policy.snapshot().excludedBackgroundRequests, 0);
+    });
+    assert.equal(externalTransports, 0);
+    assert.deepEqual(hits, ["GET /", "POST /auth/login", "GET /me"]);
+  });
+});
+
+for (const variant of [
+  "before-document",
+  "wrong-method",
+  "wrong-type",
+  "navigation",
+  "query-variant",
+  "excess",
+  "abort-failure",
+] as const) {
+  test(`Given a declared-resource ${variant}, fail closed with zero external transport and no subsequent login POST`, async () => {
+    const { DECLARED_BLOCKED_RESOURCES } = await import(
+      "../src/customer-login/declared-resources"
+    );
+    await fixture(async (url, hits) => {
+      let externalTransports = 0;
+      let denials = 0;
+      await assert.rejects(
+        withFreshLoginPage(async (page) => {
+          const context = page.context();
+          const register = context.route.bind(context);
+          let handle: Parameters<typeof context.route>[1] | undefined;
+          context.route = async (matcher, handler) => {
+            handle = handler;
+            await register(matcher, handler);
+          };
+          const policy = createAuthenticationOnlyPolicy(page, url);
+          await guardLoginRequests(context, new URL(url).origin, url, policy);
+          if (variant !== "before-document") await page.goto(url);
+          assert.ok(handle);
+          const resource = DECLARED_BLOCKED_RESOURCES[0];
+          const request = {
+            url: () =>
+              resource.url +
+              (variant === "query-variant" ? "?unexpected=1" : ""),
+            method: () => (variant === "wrong-method" ? "POST" : "GET"),
+            resourceType: () =>
+              variant === "wrong-type" ? "fetch" : resource.resourceType,
+            isNavigationRequest: () => variant === "navigation",
+          } as unknown as import("@playwright/test").Request;
+          const route = {
+            request: () => request,
+            abort: async () => {
+              denials++;
+              if (variant === "abort-failure")
+                throw new Error("SYNTHETIC_DENIAL_CANARY");
+            },
+            fetch: async () => {
+              externalTransports++;
+              throw new Error("Unexpected external transport");
+            },
+          } as unknown as import("@playwright/test").Route;
+          await handle(route, request);
+          if (variant === "excess") await handle(route, request);
+          assert.equal(
+            policy.snapshot().knownBlockedResources.total,
+            variant === "excess" ? 1 : 0,
+          );
+          if (variant === "before-document") await page.goto(url);
+          else {
+            await policy.armSubmission();
+            await page.evaluate(async () => {
+              await fetch("/auth/login", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/x-www-form-urlencoded",
+                },
+              }).catch(() => undefined);
+            });
+          }
+        }),
+      );
+      assert.equal(externalTransports, 0);
+      assert.ok(denials > 0);
+      assert.deepEqual(hits, variant === "before-document" ? [] : ["GET /"]);
+    });
+  });
+}
+
+test("Given a known denial starts after asynchronous admission, do not dispatch a credential POST until denial is confirmed", async () => {
+  const { DECLARED_BLOCKED_RESOURCES } = await import(
+    "../src/customer-login/declared-resources"
+  );
+  await fixture(async (url, hits) => {
+    await assert.rejects(
+      withFreshLoginPage(async (page) => {
+        const context = page.context();
+        const register = context.route.bind(context);
+        let handle: Parameters<typeof context.route>[1] | undefined;
+        context.route = async (matcher, handler) => {
+          handle = handler;
+          await register(matcher, handler);
+        };
+        const policy = createAuthenticationOnlyPolicy(page, url);
+        let release: () => void = () => undefined;
+        const blocked = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        let entered: () => void = () => undefined;
+        const denialEntered = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        let denial: Promise<void> | undefined;
+        const allow = policy.allow.bind(policy);
+        policy.allow = async (request) => {
+          const admitted = await allow(request);
+          if (request.method() === "POST") {
+            assert.ok(handle);
+            const resource = DECLARED_BLOCKED_RESOURCES[0];
+            const deniedRequest = {
+              url: () => resource.url,
+              method: () => "GET",
+              resourceType: () => resource.resourceType,
+              isNavigationRequest: () => false,
+            } as unknown as import("@playwright/test").Request;
+            const deniedRoute = {
+              request: () => deniedRequest,
+              abort: async () => {
+                entered();
+                await blocked;
+              },
+              fetch: async () => {
+                throw new Error("Forbidden transport");
+              },
+            } as unknown as import("@playwright/test").Route;
+            denial = Promise.resolve(handle(deniedRoute, deniedRequest));
+            await denialEntered;
+          }
+          return admitted;
+        };
+        await guardLoginRequests(context, new URL(url).origin, url, policy);
+        await page.goto(url);
+        await policy.armSubmission();
+        try {
+          await page.evaluate(async () => {
+            await fetch("/auth/login", {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            }).catch(() => undefined);
+          });
+        } finally {
+          release();
+          await denial;
+        }
+        policy.assertComplete();
+      }),
+    );
+    assert.deepEqual(hits, ["GET /"]);
+  });
+});

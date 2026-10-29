@@ -1671,6 +1671,7 @@ test("Given invalid or accessor classification, then the report never promotes i
 // Only route.fetch is remapped to loopback; no customer destination is contacted.
 for (const state of [
   "authenticated",
+  "known-resources",
   "onboarding",
   "unknown-gate",
   "missing-me",
@@ -1682,6 +1683,17 @@ for (const state of [
     const { PARTAY_AUTHENTICATION_ONLY_POLICY } = await import(
       "../src/customer-login/authentication-only"
     );
+    const { DECLARED_BLOCKED_RESOURCES } = await import(
+      "../src/customer-login/declared-resources"
+    );
+    const assets =
+      state === "known-resources"
+        ? DECLARED_BLOCKED_RESOURCES.map((resource) =>
+            resource.resourceType === "script"
+              ? `<script type="module" src="${resource.url}"></script>`
+              : `<link rel="stylesheet" href="${resource.url}">`,
+          ).join("")
+        : "";
     const hits: string[] = [];
     let contextClosed = false;
     let browserClosed = false;
@@ -1690,7 +1702,8 @@ for (const state of [
       if (req.url === "/") {
         res.setHeader("Content-Type", "text/html");
         res.end(
-          '<div id="brandLogo">Partay</div><div id="overlay"><input id="username"><input id="password" type="password" autocomplete="current-password"><div id="authUp" hidden></div><button id="authGo">Sign in</button></div><div id="onboard" hidden>Onboarding</div><div id="bottomnav" hidden>Navigation</div>',
+          assets +
+            '<div id="brandLogo">Partay</div><div id="overlay"><input id="username"><input id="password" type="password" autocomplete="current-password"><div id="authUp" hidden></div><button id="authGo">Sign in</button></div><div id="onboard" hidden>Onboarding</div><div id="bottomnav" hidden>Navigation</div>',
         );
       } else {
         res.end('{"token":"OWNED_RESPONSE_CANARY"}');
@@ -1757,6 +1770,7 @@ for (const state of [
                     } else if (
                       [
                         "authenticated",
+                        "known-resources",
                         "missing-me",
                         "visible-onboarding",
                       ].includes(state)
@@ -1777,12 +1791,16 @@ for (const state of [
           return browser;
         },
       });
-      if (state === "authenticated") {
+      if (state === "authenticated" || state === "known-resources") {
         const result = await operation;
         assert.equal(result.authenticationOnly?.scope, "authentication-only");
         assert.equal(result.authenticationOnly?.downstream, "untested-blocked");
         assert.equal(result.authenticationOnly?.productDefectEvidence, false);
         assert.equal(result.authenticationOnly?.excludedBackgroundRequests, 1);
+        assert.equal(
+          result.authenticationOnly?.knownBlockedResources.total,
+          state === "known-resources" ? 5 : 0,
+        );
         assert.ok(!JSON.stringify(result).includes("CANARY"));
         assert.deepEqual(hits, ["GET /", "POST /auth/login", "GET /me"]);
       } else {

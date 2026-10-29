@@ -22,7 +22,11 @@ export interface RuntimeLoginBrowserOptions {
 }
 
 export interface LoginRequestPolicy {
+  /** Classification can only abort. Confirmation runs after abort succeeds. */
+  denyKnownResource?(request: Request): (() => void) | undefined;
   allow(request: Request): Promise<boolean>;
+  /** Synchronous final gate after asynchronous admission, before transport. */
+  assertDispatchable?(request: Request): void;
   response(request: Request, status: number): void;
   assertComplete(): void;
 }
@@ -109,6 +113,14 @@ export async function guardLoginRequests(
         await route.abort("blockedbyclient");
         return;
       }
+      const confirmDenial = active
+        ? policy?.denyKnownResource?.(request)
+        : undefined;
+      if (confirmDenial) {
+        await route.abort("blockedbyclient");
+        confirmDenial();
+        return;
+      }
       const url = new URL(request.url());
       if (url.origin !== approvedOrigin || url.username || url.password) {
         record("off-origin");
@@ -133,6 +145,13 @@ export async function guardLoginRequests(
           await route.abort("blockedbyclient");
           return;
         }
+      }
+      try {
+        policy?.assertDispatchable?.(request);
+      } catch {
+        policyFailed = true;
+        await route.abort("blockedbyclient");
+        return;
       }
       const response = await route.fetch({
         maxRedirects: 0,

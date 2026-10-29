@@ -381,9 +381,16 @@ An authentication-only success includes `authenticationOnly.scope`,
 `downstream: "untested-blocked"`, `productDefectEvidence: false`, the policy binding
 and fixed category counts. This proves neither the home page nor downstream
 features work. Even a logo mismatch in this restricted mode is not classified as
-product-defect evidence. Expected external fonts are still denied and fatal under
-this policy; they have not been silently exempted. This may prevent a real run
-from completing and requires an explicit policy decision before activation.
+product-defect evidence. The exact three declared scripts and two font stylesheets
+listed in [retained resource metadata](./partay-declared-resources.json) are
+deny-only exclusions: one GET of the exact resource type and URL per run, only
+after initial-document admission. Every matched request is aborted before
+transport. A successful abort increments `knownBlockedResources`, separately
+from post-authentication background counts. Missing/failed denial, excess counts,
+navigation, other methods/types or any URL/query variant remain fatal. No font,
+script or other external response is fetched or mocked; presentation and 3D
+functionality are outside this authentication-only coverage. Central receipt
+preservation must be implemented before activation.
 
 The shared transport settles admitted requests before normal teardown, bounded by
 2 seconds and the existing overall deadline/cancellation. Cleanup remains an
