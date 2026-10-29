@@ -21,7 +21,7 @@ export abstract class BasePage {
    * Navigate to the page
    */
   async goto(): Promise<void> {
-    this.logger.info(`Navigating to ${this.url}`);
+    this.logger.info("Navigating to page");
     await this.page.goto(this.url);
     await this.waitForPageLoad();
   }
@@ -118,7 +118,7 @@ export abstract class BasePage {
   ): Promise<void> {
     await this.waitForElement(locator);
     await locator.selectOption(value);
-    this.logger.info(`Selected option: ${value}`);
+    this.logger.info("Selected dropdown option");
   }
 
   /**
@@ -212,7 +212,7 @@ export abstract class BasePage {
    */
   async uploadFile(locator: Locator, filePath: string): Promise<void> {
     await locator.setInputFiles(filePath);
-    this.logger.info(`Uploaded file: ${filePath}`);
+    this.logger.info("Uploaded file");
   }
 
   /**
@@ -292,7 +292,7 @@ export abstract class BasePage {
         path: "/",
       },
     ]);
-    this.logger.info(`Added cookie: ${name}=${value}`);
+    this.logger.info("Added cookie");
   }
 
   /**
@@ -325,7 +325,7 @@ export abstract class BasePage {
       ({ key, value }) => localStorage.setItem(key, value),
       { key, value },
     );
-    this.logger.info(`Set localStorage: ${key}=${value}`);
+    this.logger.info("Set localStorage item");
   }
 
   /**

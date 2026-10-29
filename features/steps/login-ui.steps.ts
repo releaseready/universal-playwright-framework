@@ -6,6 +6,17 @@ import { SyntheticLoginPage } from "./login-ui-page";
 
 const syntheticPassword = "synthetic-ui-password-8";
 const syntheticAccount = "owned-ui-account";
+const syntheticOption = "synthetic-option-secret";
+const syntheticCookie = "synthetic-cookie-secret";
+const syntheticStorageToken = "synthetic-storage-token";
+const syntheticUrlToken = "synthetic-url-token";
+const syntheticSecrets = [
+  syntheticPassword,
+  syntheticOption,
+  syntheticCookie,
+  syntheticStorageToken,
+  syntheticUrlToken,
+];
 
 function loginPage(world: SyntheticWorld): SyntheticLoginPage {
   if (!world.page) {
@@ -25,27 +36,63 @@ Given(
 );
 
 When(
-  "I enter a synthetic password without submitting",
+  "I use shared page helpers with synthetic credentials",
   async function (this: SyntheticWorld) {
     const logs: string[] = [];
     const originalInfo = console.info;
+    const originalLogLevel = process.env.LOG_LEVEL;
     console.info = (...args: unknown[]) => {
       logs.push(args.map(String).join(" "));
     };
+    process.env.LOG_LEVEL = "INFO";
     try {
-      await loginPage(this).enterPassword(syntheticPassword);
+      const target = new URL("login-ui", this.baseUrl);
+      target.searchParams.set("access_token", syntheticUrlToken);
+      const page = loginPage(this);
+      await new SyntheticLoginPage(this.page!, target.href).goto();
+      await page.enterPassword(syntheticPassword);
+      await page.selectCredential(syntheticOption);
+      await page.addSessionCookie(syntheticCookie);
+      await page.setAccessToken(syntheticStorageToken);
     } finally {
       console.info = originalInfo;
+      if (originalLogLevel === undefined) {
+        delete process.env.LOG_LEVEL;
+      } else {
+        process.env.LOG_LEVEL = originalLogLevel;
+      }
     }
     this.interactionLogs = logs;
   },
 );
 
+When(
+  "I enter a synthetic password without submitting",
+  async function (this: SyntheticWorld) {
+    await loginPage(this).enterPassword(syntheticPassword);
+  },
+);
+
 Then(
-  "the interaction logs do not contain the synthetic password",
+  "the emitted interaction logs are redacted",
   function (this: SyntheticWorld) {
+    const logs = this.interactionLogs ?? [];
+    for (const message of [
+      "Navigating to page",
+      "Filled input field",
+      "Selected dropdown option",
+      "Added cookie",
+      "Set localStorage item",
+    ]) {
+      assert.ok(
+        logs.some((entry) => entry.includes(message)),
+        `expected an interaction log containing "${message}"`,
+      );
+    }
     assert.equal(
-      this.interactionLogs?.some((entry) => entry.includes(syntheticPassword)),
+      logs.some((entry) =>
+        syntheticSecrets.some((secret) => entry.includes(secret)),
+      ),
       false,
     );
   },
@@ -101,6 +148,7 @@ When(
   async function (this: SyntheticWorld) {
     const account = this.page!.getByRole("textbox", { name: "Account name" });
     await account.focus();
+    await this.page!.keyboard.press("Tab");
     await this.page!.keyboard.press("Tab");
     await this.page!.keyboard.press("Tab");
     await this.page!.keyboard.press("Space");

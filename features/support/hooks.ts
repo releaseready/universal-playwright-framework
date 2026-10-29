@@ -41,13 +41,15 @@ BeforeAll(async function () {
   );
   browser = await chromium.launch({ timeout: 10_000 });
   server = createServer((request, response) => {
-    if (request.url === "/login-ui" && request.method === "GET") {
+    const requestPath = new URL(request.url ?? "/", "http://127.0.0.1")
+      .pathname;
+    if (requestPath === "/login-ui" && request.method === "GET") {
       response
         .writeHead(200, { "content-type": "text/html; charset=utf-8" })
         .end(loginFixture);
       return;
     }
-    if (request.url !== "/" || request.method !== "GET") {
+    if (requestPath !== "/" || request.method !== "GET") {
       response.writeHead(404).end();
       return;
     }

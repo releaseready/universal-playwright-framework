@@ -10,10 +10,10 @@ Feature: Review supported login controls on an owned synthetic form
     When I hide the password with the shared page interaction helper
     Then the password is masked and the form has not been submitted
 
-  Scenario: Password entry does not expose its value in interaction logs
+  Scenario: Shared page helpers do not expose supplied secrets in interaction logs
     Given the locally served synthetic login form is open
-    When I enter a synthetic password without submitting
-    Then the interaction logs do not contain the synthetic password
+    When I use shared page helpers with synthetic credentials
+    Then the emitted interaction logs are redacted
 
   Scenario: Keyboard users can reveal a password without submitting
     Given the locally served synthetic login form is open
