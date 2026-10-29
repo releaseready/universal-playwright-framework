@@ -30,7 +30,7 @@
     "test:mobile": "playwright test --project=mobile-chrome",
     "test:parallel": "playwright test --workers=4",
     "build:cucumber": "tsc --project tsconfig.cucumber.json",
-    "test:input-preparation": "npm run build:cucumber && cucumber-js --config cucumber-input-preparation.json && node --test dist/cucumber/scripts/data-references.test.js dist/cucumber/scripts/runtime-login.test.js",
+    "test:input-preparation": "npm run build:cucumber && cucumber-js --config cucumber-input-preparation.json && node --test dist/cucumber/scripts/data-references.test.js dist/cucumber/scripts/runtime-login.test.js dist/cucumber/scripts/reference-only-preparation.test.js",
     "test:customer-login": "npm run build:cucumber && node --test dist/cucumber/scripts/partay-login.test.js",
     "test:customer-login-ui": "npm run build:cucumber && cucumber-js --config cucumber-login-ui.json",
     "verify:partay-login": "npm run build:cucumber && node dist/cucumber/scripts/verify-partay-login.js",
