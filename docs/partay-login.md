@@ -219,8 +219,9 @@ fixture only.
 Readable Cucumber scenarios cover required-field validity without a form
 submission, one local submission by Enter, password masking and reveal/hide
 state with value preservation, keyboard focus and accessible control state,
-and password-value redaction in the reusable `BasePage.fillInput` interaction
-log. The fixture and expected UI behavior are synthetic, not observed Partay
+and redaction of supplied passwords, selected values, cookies, local-storage
+tokens, URL queries and dialog messages from reusable `BasePage` interaction
+logs. The fixture and expected UI behavior are synthetic, not observed Partay
 controls. Site UI and password-eye behavior remain unverified until authorized
 inspection. These results are local test evidence, not customer-login or
 acceptance evidence.

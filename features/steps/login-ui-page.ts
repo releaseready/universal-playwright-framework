@@ -45,4 +45,11 @@ export class SyntheticLoginPage extends BasePage {
   async setAccessToken(value: string): Promise<void> {
     await this.setLocalStorageItem("access_token", value);
   }
+
+  async showSyntheticDialog(): Promise<void> {
+    await this.handleDialog();
+    await this.clickElement(
+      this.page.getByRole("button", { name: "Open dialog" }),
+    );
+  }
 }

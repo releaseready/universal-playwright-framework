@@ -223,7 +223,7 @@ export abstract class BasePage {
     promptText?: string,
   ): Promise<void> {
     this.page.on("dialog", async (dialog) => {
-      this.logger.info(`Dialog appeared: ${dialog.message()}`);
+      this.logger.info("Dialog appeared");
       if (dialog.type() === "prompt" && promptText) {
         await dialog.accept(promptText);
       } else if (accept) {

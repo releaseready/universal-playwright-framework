@@ -15,6 +15,11 @@ Feature: Review supported login controls on an owned synthetic form
     When I use shared page helpers with synthetic credentials
     Then the emitted interaction logs are redacted
 
+  Scenario: Dialog messages do not expose supplied values in interaction logs
+    Given the locally served synthetic login form is open
+    When I open a synthetic dialog with a private message
+    Then the dialog interaction log is emitted without its message
+
   Scenario: Keyboard users can reveal a password without submitting
     Given the locally served synthetic login form is open
     When I enter a synthetic password without submitting

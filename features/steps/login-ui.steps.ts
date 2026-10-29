@@ -10,12 +10,14 @@ const syntheticOption = "synthetic-option-secret";
 const syntheticCookie = "synthetic-cookie-secret";
 const syntheticStorageToken = "synthetic-storage-token";
 const syntheticUrlToken = "synthetic-url-token";
+const syntheticDialogMessage = "synthetic-dialog-private-message";
 const syntheticSecrets = [
   syntheticPassword,
   syntheticOption,
   syntheticCookie,
   syntheticStorageToken,
   syntheticUrlToken,
+  syntheticDialogMessage,
 ];
 
 function loginPage(world: SyntheticWorld): SyntheticLoginPage {
@@ -23,6 +25,30 @@ function loginPage(world: SyntheticWorld): SyntheticLoginPage {
     throw new Error("Owned synthetic login page is unavailable");
   }
   return new SyntheticLoginPage(world.page);
+}
+
+async function captureInteractionLogs(
+  world: SyntheticWorld,
+  run: () => Promise<void>,
+): Promise<void> {
+  const logs: string[] = [];
+  const originalInfo = console.info;
+  const originalLogLevel = process.env.LOG_LEVEL;
+  console.info = (...args: unknown[]) => {
+    logs.push(args.map(String).join(" "));
+  };
+  process.env.LOG_LEVEL = "INFO";
+  try {
+    await run();
+  } finally {
+    console.info = originalInfo;
+    if (originalLogLevel === undefined) {
+      delete process.env.LOG_LEVEL;
+    } else {
+      process.env.LOG_LEVEL = originalLogLevel;
+    }
+  }
+  world.interactionLogs = logs;
 }
 
 Given(
@@ -38,14 +64,7 @@ Given(
 When(
   "I use shared page helpers with synthetic credentials",
   async function (this: SyntheticWorld) {
-    const logs: string[] = [];
-    const originalInfo = console.info;
-    const originalLogLevel = process.env.LOG_LEVEL;
-    console.info = (...args: unknown[]) => {
-      logs.push(args.map(String).join(" "));
-    };
-    process.env.LOG_LEVEL = "INFO";
-    try {
+    await captureInteractionLogs(this, async () => {
       const target = new URL("login-ui", this.baseUrl);
       target.searchParams.set("access_token", syntheticUrlToken);
       const page = loginPage(this);
@@ -54,15 +73,21 @@ When(
       await page.selectCredential(syntheticOption);
       await page.addSessionCookie(syntheticCookie);
       await page.setAccessToken(syntheticStorageToken);
-    } finally {
-      console.info = originalInfo;
-      if (originalLogLevel === undefined) {
-        delete process.env.LOG_LEVEL;
-      } else {
-        process.env.LOG_LEVEL = originalLogLevel;
-      }
-    }
-    this.interactionLogs = logs;
+    });
+  },
+);
+
+When(
+  "I open a synthetic dialog with a private message",
+  async function (this: SyntheticWorld) {
+    await captureInteractionLogs(this, async () => {
+      await this.page!.evaluate((message) => {
+        document
+          .querySelector("#dialog-trigger")
+          ?.setAttribute("data-message", message);
+      }, syntheticDialogMessage);
+      await loginPage(this).showSyntheticDialog();
+    });
   },
 );
 
@@ -93,6 +118,21 @@ Then(
       logs.some((entry) =>
         syntheticSecrets.some((secret) => entry.includes(secret)),
       ),
+      false,
+    );
+  },
+);
+
+Then(
+  "the dialog interaction log is emitted without its message",
+  function (this: SyntheticWorld) {
+    const logs = this.interactionLogs ?? [];
+    assert.ok(
+      logs.some((entry) => entry.includes("Dialog appeared")),
+      "expected the dialog interaction to be logged",
+    );
+    assert.equal(
+      logs.some((entry) => entry.includes(syntheticDialogMessage)),
       false,
     );
   },
@@ -148,6 +188,7 @@ When(
   async function (this: SyntheticWorld) {
     const account = this.page!.getByRole("textbox", { name: "Account name" });
     await account.focus();
+    await this.page!.keyboard.press("Tab");
     await this.page!.keyboard.press("Tab");
     await this.page!.keyboard.press("Tab");
     await this.page!.keyboard.press("Tab");

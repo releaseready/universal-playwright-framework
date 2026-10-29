@@ -21,6 +21,7 @@
       <select id="credential-select">
         <option value="synthetic-option-secret">Synthetic reference</option>
       </select>
+      <button id="dialog-trigger" type="button">Open dialog</button>
       <button
         id="toggle-password"
         type="button"
@@ -56,6 +57,15 @@
           ? "Hide password"
           : "Show password";
       });
+
+      document
+        .querySelector("#dialog-trigger")
+        .addEventListener("click", () => {
+          window.alert(
+            document.querySelector("#dialog-trigger").dataset.message ||
+              "Synthetic dialog",
+          );
+        });
 
       loginForm.addEventListener("submit", (event) => {
         event.preventDefault();
