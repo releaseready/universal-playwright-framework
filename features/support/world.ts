@@ -4,4 +4,5 @@ export interface SyntheticWorld {
   browser: Browser;
   baseUrl: string;
   page?: Page;
+  interactionLogs?: string[];
 }

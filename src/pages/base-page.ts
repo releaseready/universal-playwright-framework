@@ -3,7 +3,7 @@
  * Provides common functionality and utilities for page interactions
  */
 
-import { Page, Locator, expect } from "@playwright/test";
+import { Page, Locator } from "@playwright/test";
 import { Logger } from "../utils/logger";
 
 export abstract class BasePage {
@@ -21,7 +21,7 @@ export abstract class BasePage {
    * Navigate to the page
    */
   async goto(): Promise<void> {
-    this.logger.info(`Navigating to ${this.url}`);
+    this.logger.info("Navigating to page");
     await this.page.goto(this.url);
     await this.waitForPageLoad();
   }
@@ -54,7 +54,7 @@ export abstract class BasePage {
   async takeScreenshot(name?: string): Promise<Buffer> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const filename = name || `screenshot-${timestamp}`;
-    this.logger.info(`Taking screenshot: ${filename}`);
+    this.logger.info("Taking screenshot");
     return await this.page.screenshot({
       path: `screenshots/${filename}.png`,
       fullPage: true,
@@ -90,7 +90,7 @@ export abstract class BasePage {
   ): Promise<void> {
     await this.waitForElement(locator);
     await locator.click(options);
-    this.logger.info(`Clicked element: ${locator}`);
+    this.logger.info("Clicked element");
   }
 
   /**
@@ -106,7 +106,7 @@ export abstract class BasePage {
       await locator.clear();
     }
     await locator.fill(value);
-    this.logger.info(`Filled input with value: ${value}`);
+    this.logger.info("Filled input field");
   }
 
   /**
@@ -118,7 +118,7 @@ export abstract class BasePage {
   ): Promise<void> {
     await this.waitForElement(locator);
     await locator.selectOption(value);
-    this.logger.info(`Selected option: ${value}`);
+    this.logger.info("Selected dropdown option");
   }
 
   /**
@@ -177,7 +177,7 @@ export abstract class BasePage {
    */
   async scrollToElement(locator: Locator): Promise<void> {
     await locator.scrollIntoViewIfNeeded();
-    this.logger.info(`Scrolled to element: ${locator}`);
+    this.logger.info("Scrolled to element");
   }
 
   /**
@@ -186,7 +186,7 @@ export abstract class BasePage {
   async hoverElement(locator: Locator): Promise<void> {
     await this.waitForElement(locator);
     await locator.hover();
-    this.logger.info(`Hovered over element: ${locator}`);
+    this.logger.info("Hovered over element");
   }
 
   /**
@@ -195,7 +195,7 @@ export abstract class BasePage {
   async doubleClickElement(locator: Locator): Promise<void> {
     await this.waitForElement(locator);
     await locator.dblclick();
-    this.logger.info(`Double clicked element: ${locator}`);
+    this.logger.info("Double clicked element");
   }
 
   /**
@@ -204,7 +204,7 @@ export abstract class BasePage {
   async rightClickElement(locator: Locator): Promise<void> {
     await this.waitForElement(locator);
     await locator.click({ button: "right" });
-    this.logger.info(`Right clicked element: ${locator}`);
+    this.logger.info("Right clicked element");
   }
 
   /**
@@ -212,7 +212,7 @@ export abstract class BasePage {
    */
   async uploadFile(locator: Locator, filePath: string): Promise<void> {
     await locator.setInputFiles(filePath);
-    this.logger.info(`Uploaded file: ${filePath}`);
+    this.logger.info("Uploaded file");
   }
 
   /**
@@ -223,7 +223,7 @@ export abstract class BasePage {
     promptText?: string,
   ): Promise<void> {
     this.page.on("dialog", async (dialog) => {
-      this.logger.info(`Dialog appeared: ${dialog.message()}`);
+      this.logger.info("Dialog appeared");
       if (dialog.type() === "prompt" && promptText) {
         await dialog.accept(promptText);
       } else if (accept) {
@@ -292,7 +292,7 @@ export abstract class BasePage {
         path: "/",
       },
     ]);
-    this.logger.info(`Added cookie: ${name}=${value}`);
+    this.logger.info("Added cookie");
   }
 
   /**
@@ -306,8 +306,11 @@ export abstract class BasePage {
   /**
    * Execute JavaScript
    */
-  async executeScript(script: string, ...args: any[]): Promise<any> {
-    return await this.page.evaluate(script, ...args);
+  async executeScript<Result = unknown, Argument = undefined>(
+    script: string,
+    argument?: Argument,
+  ): Promise<Result> {
+    return this.page.evaluate<Result, Argument | undefined>(script, argument);
   }
 
   /**
@@ -325,7 +328,7 @@ export abstract class BasePage {
       ({ key, value }) => localStorage.setItem(key, value),
       { key, value },
     );
-    this.logger.info(`Set localStorage: ${key}=${value}`);
+    this.logger.info("Set localStorage item");
   }
 
   /**

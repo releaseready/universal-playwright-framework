@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic login UI</title>
+  </head>
+  <body>
+    <form id="login-form" data-submissions="0">
+      <label for="username">Account name</label>
+      <input id="username" name="username" autocomplete="username" required />
+
+      <label for="password">Password</label>
+      <input
+        id="password"
+        name="password"
+        type="password"
+        autocomplete="current-password"
+        required
+      />
+      <label for="credential-select">Credential reference</label>
+      <select id="credential-select">
+        <option value="synthetic-option-secret">Synthetic reference</option>
+      </select>
+      <button id="locator-canary" type="button">
+        synthetic-locator-private-value
+      </button>
+      <button id="dialog-trigger" type="button">Open dialog</button>
+      <button
+        id="toggle-password"
+        type="button"
+        aria-label="Show password"
+        aria-pressed="false"
+      >
+        Show password
+      </button>
+      <button type="submit">Sign in</button>
+    </form>
+    <p role="status" aria-live="polite"></p>
+
+    <style>
+      #toggle-password:focus-visible {
+        outline: 2px solid rgb(0, 0, 255);
+      }
+    </style>
+
+    <script>
+      const loginForm = document.querySelector("#login-form");
+      const passwordInput = document.querySelector("#password");
+      const passwordToggle = document.querySelector("#toggle-password");
+
+      passwordToggle.addEventListener("click", () => {
+        const revealPassword = passwordInput.type === "password";
+        passwordInput.type = revealPassword ? "text" : "password";
+        passwordToggle.setAttribute("aria-pressed", String(revealPassword));
+        passwordToggle.setAttribute(
+          "aria-label",
+          revealPassword ? "Hide password" : "Show password",
+        );
+        passwordToggle.textContent = revealPassword
+          ? "Hide password"
+          : "Show password";
+      });
+
+      document
+        .querySelector("#dialog-trigger")
+        .addEventListener("click", () => {
+          window.alert(
+            document.querySelector("#dialog-trigger").dataset.message ||
+              "Synthetic dialog",
+          );
+        });
+
+      loginForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        loginForm.dataset.submissions = String(
+          Number(loginForm.dataset.submissions) + 1,
+        );
+        document.querySelector('[role="status"]').textContent =
+          "Local form submitted";
+      });
+    </script>
+  </body>
+</html>

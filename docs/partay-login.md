@@ -212,6 +212,29 @@ The shared browser displayed in an editor is not reused for credential entry.
 
 ## Local checks and retained handover evidence
 
+### Offline login UI candidate tests
+
+`npm run test:customer-login-ui` exercises an owned, self-contained HTML login
+fixture only.
+Readable Cucumber scenarios cover required-field validity without a form
+submission, one local submission by Enter, password masking and reveal/hide
+state with value preservation, keyboard focus and accessible control state,
+and redaction of supplied passwords, selected values, cookies, local-storage
+tokens, URL queries, dialog messages, and selector text from reusable `BasePage`
+interaction logs. The fixture and expected UI behavior are synthetic, not
+observed Partay controls. Site UI and password-eye behavior remain unverified
+until authorized inspection. These results are local test evidence, not
+customer-login or acceptance evidence.
+The repository-local TypeScript ESLint configuration reuses existing ESLint 8
+and TypeScript ESLint dependencies. The focused changed-file check is:
+
+```bash
+npx eslint src/pages/base-page.ts features/steps/login-ui-page.ts features/steps/login-ui.steps.ts features/support/hooks.ts features/support/world.ts
+```
+
+This focused check does not claim that every repository TypeScript file has
+passed lint.
+
 ### Deferred private-account-file input
 
 Private-account-file input is deferred and excluded from the MVP. The CLI

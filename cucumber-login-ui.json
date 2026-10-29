@@ -1,0 +1,10 @@
+{
+  "default": {
+    "paths": ["features/login-ui.feature"],
+    "require": [
+      "dist/cucumber/features/support/hooks.js",
+      "dist/cucumber/features/steps/login-ui.steps.js"
+    ],
+    "format": ["progress"]
+  }
+}
