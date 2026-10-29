@@ -84,3 +84,12 @@ export {
   partayLoginFailureReport,
 } from "./customer-login/partay";
 export type { RuntimeLoginBrowserOptions } from "./execution/runtime-login-browser";
+
+// Public offline review boundary; validation never grants execution permission.
+export { validateFeatureFile } from "./validation/feature-validator";
+export type {
+  FeatureValidation,
+  ReviewedStepManifest,
+  ValidateFeatureInput,
+} from "./validation/feature-validator";
+export type { ScenarioApproval } from "./validation/scenario-selector";

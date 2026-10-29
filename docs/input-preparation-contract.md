@@ -316,3 +316,20 @@ The RRDWEB-8 [Partay login-only consumer](./partay-login.md) uses this boundary
 with a fresh browser context, exact target/logo/overlay assertions, bounded
 execution and cleanup. Its synthetic results do not replace joined customer
 acceptance or independently approved runtime inputs.
+
+## Reference-only operator fixtures (RRDWEB-6)
+
+A scenario with no fixture values must still supply `values: {}` and an explicit
+empty entry for that scenario in the reviewed `scenarioFields` policy, with no
+shared fields. Missing policies, omitted values, undeclared fields and missing
+required fields remain invalid. This does not approve a scenario or execution.
+
+When a verified data reference supplies a secret, its ID must match the account
+secret reference. Preparation carries that verified secret revision into the
+prepared account, allowing the central operator composition to consume the public
+output unchanged. No caller-supplied credential value is accepted.
+
+The root package exports the existing `validateFeatureFile` and review types for
+offline consumers. Validation resolves a real bounded feature against a supplied
+reviewed step manifest; it does not establish the manifest's authority or register
+executable Cucumber handlers. The caller remains responsible for trusted review.

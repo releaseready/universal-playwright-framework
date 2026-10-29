@@ -308,6 +308,16 @@ test("Preparation rejects withdrawn or missing references before any execution h
 
 test("Preparation retains versioned secret references but rejects secret payloads safely", async () => {
   const { input, validation, approval } = await loadPreparationContext();
+  input.accounts = [
+    {
+      reference: "synthetic-account-row-a",
+      secretReference: "synthetic-account",
+    },
+    {
+      reference: "synthetic-account-row-b",
+      secretReference: "synthetic-account",
+    },
+  ];
   for (const reference of selection.rows) {
     const fixture = input.scenarios.find(
       (scenario) => scenario.id === reference.scenarioId,
