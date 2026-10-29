@@ -11,12 +11,7 @@ const FETCH_PATHS = new Set([
   "/meta/taxonomies",
   "/health",
 ]);
-const STATIC_TYPES: Readonly<Record<string, RegExp>> = {
-  stylesheet: /\.css$/i,
-  script: /\.(?:js|mjs)$/i,
-  image: /\.(?:png|jpg|jpeg|gif|svg|webp|ico)$/i,
-  font: /\.(?:woff2?|ttf|otf)$/i,
-};
+// No exact static-asset paths were retained as reviewed evidence. Deny them.
 
 /** Internal browser seam; the operator entry point supplies the fixed Partay URL. */
 export async function guardInspectionRequests(
@@ -69,9 +64,8 @@ export async function guardInspectionRequests(
         request.frame() === page.mainFrame();
       const allowedResource =
         !document &&
-        (request.resourceType() === "fetch"
-          ? FETCH_PATHS.has(url.pathname)
-          : STATIC_TYPES[request.resourceType()]?.test(url.pathname) === true);
+        request.resourceType() === "fetch" &&
+        FETCH_PATHS.has(url.pathname);
       if (
         !active ||
         request.method() !== "GET" ||
@@ -174,7 +168,63 @@ export async function observeLoginControls(page: Page) {
     ),
   );
   const before = { type: "password", label: "Show password" };
-  await eye.click({ noWaitAfter: true });
+  const activation = await eye.evaluateHandle((button) => {
+    const state = { blocked: false, activations: 0 };
+    const guard = (event: Event): void => {
+      if (!event.composedPath().includes(button)) return;
+      const accounts = document.querySelectorAll("#overlay #username");
+      const passwords = document.querySelectorAll("#overlay #password");
+      const eyes = document.querySelectorAll("#overlay button.pw-eye");
+      const account = accounts[0];
+      const password = passwords[0];
+      // Synchronous dispatch-time check, after pointer/hover handlers and before
+      // the target's activation handlers. Never rely on earlier awaited reads.
+      if (
+        accounts.length !== 1 ||
+        passwords.length !== 1 ||
+        eyes.length !== 1 ||
+        eyes[0] !== button ||
+        !(account instanceof HTMLInputElement) ||
+        !(password instanceof HTMLInputElement) ||
+        !(button instanceof HTMLButtonElement) ||
+        account.value !== "" ||
+        password.value !== "" ||
+        password.type !== "password" ||
+        button.type !== "button" ||
+        button.disabled ||
+        button.getAttribute("aria-label") !== "Show password" ||
+        state.activations !== 0
+      ) {
+        state.blocked = true;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (event.currentTarget === button) state.activations++;
+    };
+    // Check early for hover changes, and again at the target after intervening
+    // document/ancestor capture handlers, before the usual bubble activation.
+    window.addEventListener("click", guard, true);
+    button.addEventListener("click", guard, true);
+    return {
+      state,
+      remove: () => {
+        window.removeEventListener("click", guard, true);
+        button.removeEventListener("click", guard, true);
+      },
+    };
+  });
+  try {
+    await eye.click({ noWaitAfter: true });
+    const state = await activation.evaluate((activation) => activation.state);
+    if (state.blocked || state.activations !== 1)
+      throw new Error("Inspection activation blocked");
+  } finally {
+    await activation
+      .evaluate((activation) => activation.remove())
+      .catch(() => undefined);
+    await activation.dispose();
+  }
   const type = await password.getAttribute("type");
   const label = await eye.getAttribute("aria-label");
   if (

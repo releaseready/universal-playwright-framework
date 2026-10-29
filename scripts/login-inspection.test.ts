@@ -355,7 +355,7 @@ test("Given the login overlay is absent, no similarly named eye elsewhere is cli
   });
 });
 
-test("Given a permitted static stylesheet, it loads but the same path fetched dynamically does not", async () => {
+test("Given an unlisted static-looking endpoints, no stylesheet, script, image, font or fetch reaches them", async () => {
   await fixture(async (url, hits) => {
     await withFreshLoginPage(async (page) => {
       const policy = await guardInspectionRequests(page.context(), page, url);
@@ -368,12 +368,26 @@ test("Given a permitted static stylesheet, it loads but the same path fetched dy
           link.onload = link.onerror = () => resolve();
           document.head.append(link);
         });
+        await new Promise<void>((resolve) => {
+          const script = document.createElement("script");
+          script.src = "/unreviewed.js";
+          script.onload = script.onerror = () => resolve();
+          document.head.append(script);
+        });
+        await new Promise<void>((resolve) => {
+          const image = new Image();
+          image.onload = image.onerror = () => resolve();
+          image.src = "/unreviewed.png";
+        });
+        await new FontFace("Owned", "url(/unreviewed.woff2)")
+          .load()
+          .catch(() => undefined);
         await fetch("/owned.css").catch(() => undefined);
       });
       policy.assertComplete();
-      assert.equal(policy.snapshot().blockedRequests, 1);
+      assert.equal(policy.snapshot().blockedRequests, 5);
     });
-    assert.deepEqual(hits, ["GET /", "GET /owned.css"]);
+    assert.deepEqual(hits, ["GET /"]);
   });
 });
 
@@ -433,4 +447,51 @@ for (const kind of ["cancel", "timeout"] as const) {
       );
     });
   });
+}
+
+for (const timing of [
+  "mouseover",
+  "window-click",
+  "document-click",
+  "target-click",
+] as const) {
+  for (const field of ["username", "password"] as const) {
+    test(`Given ${field} is populated during ${timing}, no eye activation occurs`, async () => {
+      await fixture(async (url) => {
+        await withFreshLoginPage(async (page) => {
+          await guardInspectionRequests(page.context(), page, url);
+          await page.goto(url);
+          await page.evaluate(
+            ({ timing, field }) => {
+              const eye = document.querySelector<HTMLButtonElement>(".pw-eye")!;
+              (timing === "document-click"
+                ? document
+                : timing === "target-click"
+                  ? eye
+                  : window
+              ).addEventListener(
+                timing === "mouseover" ? "mouseover" : "click",
+                (event) => {
+                  if (event.target === eye)
+                    document.querySelector<HTMLInputElement>(
+                      `#${field}`,
+                    )!.value = "SYNTHETIC_PRIVATE";
+                },
+                true,
+              );
+              eye.addEventListener("click", () => {
+                document.body.dataset.activations = "1";
+              });
+            },
+            { timing, field },
+          );
+          await assert.rejects(observeLoginControls(page));
+          assert.equal(
+            await page.locator("body").getAttribute("data-activations"),
+            null,
+          );
+        });
+      });
+    });
+  }
 }

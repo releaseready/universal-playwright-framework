@@ -303,10 +303,10 @@ descriptor, request file, customer identity or arbitrary target argument is acce
 It does not invoke the login consumer, enter values or click Sign in.
 
 The fixed target is the Partay initial document. The isolated inspection guard
-allows that main-frame document once, same-origin GET static resources with matching
-stylesheet/script/image/font types and extensions, and exactly GET **fetch** requests
-for `/agent/avatar-config`, `/meta/taxonomies` and `/health`. Query strings, other
-dynamic paths/methods/types, other origins, further document navigations and
+allows that main-frame document once and exactly GET **fetch** requests
+for `/agent/avatar-config`, `/meta/taxonomies` and `/health`. No exact static-asset paths were retained as reviewed evidence, so all additional
+static assets are denied, including paths ending in .js, .css or image/font suffixes.
+Query strings, other dynamic paths/methods/types, other origins, further document navigations and
 WebSockets are denied before transport. Service workers are blocked by the reused
 fresh-context lifecycle. Fetches use no redirects or retries; HTTP 30x responses are
 never passed to the browser. Cookies and Authorization are withheld and Set-Cookie
@@ -314,7 +314,10 @@ is not forwarded. This temporary guard does not change production login policy.
 
 The observer requires a visible, unambiguous login overlay, empty username/password
 fields, a password-type field and a button-type eye labelled Show password. It
-clicks that eye once, records before/after type and fixed known accessible labels,
+uses a synchronous capture-phase click guard to recheck both empty fields and
+exact bindings after hover/pointer activity and before target activation. If a field
+was populated in that interval, the guard cancels the click before the eye handler.
+It clicks that eye once, records before/after type and fixed known accessible labels,
 and reports overlay/logo presence/visibility and whether the logo text is Partay.
 Unknown text is reported as `other`, never copied. It does not assert successful
 login or comprehensive UI coverage. No screenshots, trace, storage state, raw DOM,
