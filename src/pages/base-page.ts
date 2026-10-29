@@ -306,8 +306,11 @@ export abstract class BasePage {
   /**
    * Execute JavaScript
    */
-  async executeScript(script: string, ...args: any[]): Promise<any> {
-    return await this.page.evaluate(script, ...args);
+  async executeScript<Result = unknown, Argument = undefined>(
+    script: string,
+    argument?: Argument,
+  ): Promise<Result> {
+    return this.page.evaluate<Result, Argument | undefined>(script, argument);
   }
 
   /**
