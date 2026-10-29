@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
-import { chromium } from "@playwright/test";
+import { chromium, type Page } from "@playwright/test";
 import { RuntimeLoginFailure } from "../src/input-preparation/runtime-login";
 import { withFreshLoginPage } from "../src/execution/runtime-login-browser";
 import {
@@ -470,6 +470,204 @@ test("Given hostile capture handlers, observation never activates any control or
       assert.equal(result.eye.activations, 0);
       assert.equal(result.eye.behavior, "unverified");
       assert.equal(await page.locator("#password").inputValue(), "");
+    });
+    assert.deepEqual(hits, ["GET /"]);
+  });
+});
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function delayHealth(
+  page: Page,
+  beforeFetch: () => Promise<void>,
+): Promise<void> {
+  const started = deferred();
+  const register = page.context().route.bind(page.context());
+  page.context().route = async (pattern, handler, options) =>
+    register(
+      pattern,
+      async (route, request) => {
+        const fetch = route.fetch.bind(route);
+        route.fetch = async (options) => {
+          if (new URL(request.url()).pathname === "/health") {
+            started.resolve();
+            await beforeFetch();
+          }
+          return fetch(options);
+        };
+        await handler(route, request);
+      },
+      options,
+    );
+  return started.promise;
+}
+
+test("Given a fetch still settling, stop waits before browser cleanup and preserves its successful outcome", async () => {
+  await fixture(async (url, hits) => {
+    let policy: Awaited<ReturnType<typeof guardInspectionRequests>> | undefined;
+    await withFreshLoginPage(async (page) => {
+      const release = deferred();
+      const started = delayHealth(page, () => release.promise);
+      policy = await guardInspectionRequests(page.context(), page, url);
+      await page.goto(url);
+      await page.evaluate(() => {
+        void fetch("/health").catch(() => undefined);
+      });
+      await started;
+      let stopped = false;
+      const stop = Promise.resolve(policy.stop()).then(() => {
+        stopped = true;
+      });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.equal(stopped, false);
+      release.resolve();
+      await stop;
+      policy.assertComplete();
+    });
+    policy!.assertComplete();
+    assert.deepEqual(hits, ["GET /", "GET /health"]);
+  });
+});
+
+for (const outcome of ["never-settles", "transport-error"] as const) {
+  test(`Given an admitted fetch ${outcome}, drain stays bounded and never hides the failure`, async () => {
+    await fixture(async (url, hits) => {
+      await withFreshLoginPage(async (page) => {
+        const release = deferred();
+        const started = delayHealth(page, async () => {
+          await release.promise;
+          throw new Error("SYNTHETIC_PRIVATE");
+        });
+        const policy = await guardInspectionRequests(page.context(), page, url);
+        await page.goto(url);
+        await page.evaluate(() => {
+          void fetch("/health").catch(() => undefined);
+        });
+        await started;
+        const start = Date.now();
+        const stopped = policy.stop();
+        if (outcome === "transport-error") release.resolve();
+        await stopped;
+        assert.ok(Date.now() - start < 5000);
+        assert.throws(() => policy.assertComplete(), {
+          message: "Inspection transport incomplete",
+        });
+        assert.ok(
+          !JSON.stringify(policy.snapshot()).includes("SYNTHETIC_PRIVATE"),
+        );
+      });
+      assert.equal(hits[0], "GET /");
+      assert.ok(hits.slice(1).every((hit) => hit === "GET /health"));
+      assert.ok(hits.length <= 2);
+    });
+  });
+}
+
+for (const interruption of ["cancel", "deadline"] as const) {
+  test(`Given ${interruption} during drain, the browser lifecycle still interrupts without waiting for transport`, async () => {
+    await fixture(async (url) => {
+      const controller = new AbortController();
+      const start = Date.now();
+      await assert.rejects(
+        withFreshLoginPage(
+          async (page) => {
+            const started = delayHealth(
+              page,
+              () => new Promise<void>(() => undefined),
+            );
+            const policy = await guardInspectionRequests(
+              page.context(),
+              page,
+              url,
+            );
+            await page.goto(url);
+            await page.evaluate(() => {
+              void fetch("/health").catch(() => undefined);
+            });
+            await started;
+            const stopped = policy.stop(controller.signal);
+            if (interruption === "cancel") controller.abort();
+            await stopped;
+          },
+          { signal: controller.signal, timeoutMs: 1000 },
+        ),
+        (error) => {
+          const failure = RuntimeLoginFailure.fromUnknown(error);
+          assert.equal(
+            failure?.failureClassification,
+            interruption === "cancel" ? "interrupted" : "timed-out",
+          );
+          assert.notEqual(failure?.cleanupStatus, "not-acquired");
+          return true;
+        },
+      );
+      assert.ok(Date.now() - start < 2500);
+    });
+  });
+}
+
+test("Given denial fails after stop, inspection remains failed rather than hiding the error", async () => {
+  await fixture(async (url, hits) => {
+    await withFreshLoginPage(async (page) => {
+      const handled = deferred();
+      const register = page.context().route.bind(page.context());
+      page.context().route = async (pattern, handler, options) =>
+        register(
+          pattern,
+          async (route, request) => {
+            if (new URL(request.url()).pathname === "/health") {
+              route.abort = async () => {
+                throw new Error("Owned close race");
+              };
+              route.fetch = async () => {
+                throw new Error("Unexpected transport");
+              };
+            }
+            await handler(route, request);
+            if (new URL(request.url()).pathname === "/health")
+              handled.resolve();
+          },
+          options,
+        );
+      const policy = await guardInspectionRequests(page.context(), page, url);
+      await page.goto(url);
+      await policy.stop();
+      const requested = page.waitForEvent("request", {
+        predicate: (request) => new URL(request.url()).pathname === "/health",
+      });
+      await page.evaluate(() => {
+        void fetch("/health").catch(() => undefined);
+      });
+      await requested;
+      await handled.promise;
+      assert.throws(() => policy.assertComplete(), {
+        message: "Inspection transport incomplete",
+      });
+    });
+    assert.equal(hits[0], "GET /");
+    assert.ok(hits.slice(1).every((hit) => hit === "GET /health"));
+  });
+});
+
+test("Given admission has stopped, a new otherwise permitted fetch is denied before transport", async () => {
+  await fixture(async (url, hits) => {
+    await withFreshLoginPage(async (page) => {
+      const policy = await guardInspectionRequests(page.context(), page, url);
+      await page.goto(url);
+      const stopped = policy.stop();
+      assert.equal(policy.stop(), stopped);
+      await stopped;
+      await page.evaluate(async () => {
+        await fetch("/health").catch(() => undefined);
+      });
+      policy.assertComplete();
+      assert.equal(policy.snapshot().blockedRequests, 1);
     });
     assert.deepEqual(hits, ["GET /"]);
   });

@@ -326,6 +326,11 @@ trace, storage state, raw DOM, field values or request URLs are emitted. A page'
 own scripts can still initiate denied requests; blocking counts are not permission
 or application correctness.
 
+After observation, new requests are denied and already-running route handlers
+have at most two seconds to settle before cleanup. The overall browser deadline
+and cancellation still apply. A drain timeout or genuine transport/denial failure
+remains a failure; it is not discarded merely because admission stopped.
+
 `observed` is returned only after the shared bounded lifecycle finishes cleanup.
 Failure reports preserve separate cleanup status; uncertain cleanup is not success.
 No automatic retry is supported. This command's fixed flag is an operator guard,

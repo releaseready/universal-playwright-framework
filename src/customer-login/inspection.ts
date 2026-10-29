@@ -40,6 +40,9 @@ export async function guardInspectionRequests(
   let redirectsBlocked = 0;
   let transportFailed = false;
   let active = true;
+  let drainFailed = false;
+  let drained: (() => void) | undefined;
+  let stopPromise: Promise<void> | undefined;
   await context.routeWebSocket("**/*", (socket) => {
     blockedRequests++;
     socket.close();
@@ -105,14 +108,35 @@ export async function guardInspectionRequests(
       await route.abort("blockedbyclient").catch(() => undefined);
     } finally {
       pending--;
+      if (pending === 0) drained?.();
     }
   });
   return {
-    stop: () => {
+    stop: (signal?: AbortSignal): Promise<void> => {
       active = false;
+      stopPromise ??=
+        pending === 0
+          ? Promise.resolve()
+          : new Promise<void>((resolve) => {
+              const finish = (): void => {
+                clearTimeout(timer);
+                signal?.removeEventListener("abort", interrupted);
+                drained = undefined;
+                resolve();
+              };
+              const interrupted = (): void => {
+                drainFailed = true;
+                finish();
+              };
+              const timer = setTimeout(interrupted, 2_000);
+              drained = finish;
+              signal?.addEventListener("abort", interrupted, { once: true });
+              if (signal?.aborted) interrupted();
+            });
+      return stopPromise;
     },
     assertComplete: () => {
-      if (pending || redirectsBlocked || transportFailed)
+      if (pending || drainFailed || redirectsBlocked || transportFailed)
         throw new Error("Inspection transport incomplete");
     },
     snapshot: () => ({ blockedRequests, redirectsBlocked }),
@@ -191,7 +215,7 @@ export async function inspectPartayLogin(
       throw new Error("Inspection destination changed");
     setStage("form-visible");
     evidence = await observeLoginControls(page);
-    policy.stop();
+    await policy.stop(options.signal);
   }, options);
   try {
     policy?.assertComplete();
