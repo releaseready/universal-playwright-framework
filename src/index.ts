@@ -84,3 +84,10 @@ export {
   partayLoginFailureReport,
 } from "./customer-login/partay";
 export type { RuntimeLoginBrowserOptions } from "./execution/runtime-login-browser";
+
+export { PARTAY_AUTHENTICATION_ONLY_POLICY } from "./customer-login/authentication-only";
+export type { AuthenticationOnlyBinding } from "./customer-login/authentication-only";
+export type {
+  PartayLoginOptions,
+  PartayLoginResult,
+} from "./customer-login/partay";

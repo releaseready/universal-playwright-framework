@@ -1666,3 +1666,176 @@ test("Given invalid or accessor classification, then the report never promotes i
     "unknown",
   );
 });
+
+// The real public API, existing provider and lifecycle consume an owned page.
+// Only route.fetch is remapped to loopback; no customer destination is contacted.
+for (const state of [
+  "authenticated",
+  "onboarding",
+  "unknown-gate",
+  "missing-me",
+  "visible-onboarding",
+  "registration",
+] as const) {
+  test(`Authentication-only public login with ${state} retains truthful scope and disposes inputs`, async () => {
+    const { descriptor, request, provider } = fixture();
+    const { PARTAY_AUTHENTICATION_ONLY_POLICY } = await import(
+      "../src/customer-login/authentication-only"
+    );
+    const hits: string[] = [];
+    let contextClosed = false;
+    let browserClosed = false;
+    const server = createServer((req, res) => {
+      hits.push(`${req.method} ${req.url}`);
+      if (req.url === "/") {
+        res.setHeader("Content-Type", "text/html");
+        res.end(
+          '<div id="brandLogo">Partay</div><div id="overlay"><input id="username"><input id="password" type="password" autocomplete="current-password"><div id="authUp" hidden></div><button id="authGo">Sign in</button></div><div id="onboard" hidden>Onboarding</div><div id="bottomnav" hidden>Navigation</div>',
+        );
+      } else {
+        res.end('{"token":"OWNED_RESPONSE_CANARY"}');
+      }
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    try {
+      const operation = verifyPartayLogin(descriptor, request, provider, {
+        authenticationOnlyPolicy: PARTAY_AUTHENTICATION_ONLY_POLICY,
+        timeoutMs: 5000,
+        launchBrowser: async () => {
+          const browser = await chromium.launch();
+          browser.on("disconnected", () => {
+            browserClosed = true;
+          });
+          const newContext = browser.newContext.bind(browser);
+          browser.newContext = async (options) => {
+            assert.equal(options?.serviceWorkers, "block");
+            const context = await newContext(options);
+            context.on("close", () => {
+              contextClosed = true;
+            });
+            const register = context.route.bind(context);
+            context.route = async (matcher, handler) =>
+              register(matcher, async (route, req) => {
+                route.fetch = async (opts) => {
+                  assert.equal(opts?.maxRedirects, 0);
+                  assert.equal(opts?.maxRetries, 0);
+                  const path = new URL(req.url()).pathname;
+                  // Deliberately do not forward or inspect input values/headers.
+                  return context.request.fetch(
+                    `http://127.0.0.1:${address.port}${path}`,
+                    { method: req.method(), maxRedirects: 0 },
+                  );
+                };
+                await handler(route, req);
+              });
+            const newPage = context.newPage.bind(context);
+            context.newPage = async () => {
+              const page = await newPage();
+              const goto = page.goto.bind(page);
+              page.goto = async (url, opts) => {
+                const response = await goto(url, opts);
+                await page.evaluate((state) => {
+                  const button = document.getElementById("authGo")!;
+                  if (state === "registration")
+                    button.textContent = "Create account";
+                  button.onclick = async () => {
+                    await fetch("/auth/login", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/x-www-form-urlencoded",
+                      },
+                    });
+                    if (state !== "missing-me") await fetch("/me");
+                    document.getElementById("overlay")!.hidden = true;
+                    if (state === "onboarding") {
+                      await fetch("/agent/characters").catch(() => undefined);
+                      document.getElementById("onboard")!.hidden = false;
+                    } else if (
+                      [
+                        "authenticated",
+                        "missing-me",
+                        "visible-onboarding",
+                      ].includes(state)
+                    ) {
+                      if (state === "visible-onboarding")
+                        document.getElementById("onboard")!.hidden = false;
+                      document.getElementById("bottomnav")!.hidden = false;
+                      await fetch("/agent/greeting").catch(() => undefined);
+                    }
+                  };
+                }, state);
+                return response;
+              };
+              return page;
+            };
+            return context;
+          };
+          return browser;
+        },
+      });
+      if (state === "authenticated") {
+        const result = await operation;
+        assert.equal(result.authenticationOnly?.scope, "authentication-only");
+        assert.equal(result.authenticationOnly?.downstream, "untested-blocked");
+        assert.equal(result.authenticationOnly?.productDefectEvidence, false);
+        assert.equal(result.authenticationOnly?.excludedBackgroundRequests, 1);
+        assert.ok(!JSON.stringify(result).includes("CANARY"));
+        assert.deepEqual(hits, ["GET /", "POST /auth/login", "GET /me"]);
+      } else {
+        await assert.rejects(operation, (error) => {
+          assertSafe(error);
+          assert.notEqual(
+            partayLoginFailureReport(error).failureClassification,
+            "assertion-failed",
+          );
+          return true;
+        });
+        assert.ok(!hits.includes("GET /agent/characters"));
+        if (state === "registration") assert.deepEqual(hits, ["GET /"]);
+      }
+      assert.equal(contextClosed, true);
+      assert.equal(browserClosed, true);
+      await assertDisposed(provider, request);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+}
+
+test("Given an unknown explicit policy binding, reject before resolving inputs or acquiring a browser and dispose the provider", async () => {
+  const { descriptor, request, provider } = fixture();
+  let resolutions = 0;
+  let launches = 0;
+  await assert.rejects(
+    verifyPartayLogin(
+      descriptor,
+      request,
+      {
+        resolve: async () => {
+          resolutions++;
+          return "SYNTHETIC_CANARY";
+        },
+        dispose: () => provider.dispose(),
+      },
+      {
+        authenticationOnlyPolicy: {
+          id: "unknown",
+          revision: "v1",
+        } as unknown as import("../src/customer-login/authentication-only").AuthenticationOnlyBinding,
+        launchBrowser: async () => {
+          launches++;
+          throw new Error("Unexpected launch");
+        },
+      },
+    ),
+    assertSafe,
+  );
+  assert.equal(resolutions, 0);
+  assert.equal(launches, 0);
+  await assertDisposed(provider, request);
+});

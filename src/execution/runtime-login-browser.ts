@@ -4,6 +4,7 @@ import {
   type Browser,
   type BrowserContext,
   type Page,
+  type Request,
 } from "@playwright/test";
 import {
   RuntimeLoginFailure,
@@ -20,6 +21,13 @@ export interface RuntimeLoginBrowserOptions {
   readonly launchBrowser?: (timeoutMs: number) => Promise<Browser>;
 }
 
+export interface LoginRequestPolicy {
+  allow(request: Request): Promise<boolean>;
+  response(request: Request, status: number): void;
+  assertComplete(): void;
+}
+const requestSettlements = new WeakMap<BrowserContext, () => Promise<void>>();
+
 export const LOGIN_CLEANUP_TIMEOUT_MS = 1_000;
 
 // Check the registered guard after work AND cleanup, including failed assertions.
@@ -30,6 +38,7 @@ export async function guardLoginRequests(
   context: BrowserContext,
   approvedOrigin: string,
   loginUrl: string,
+  policy?: LoginRequestPolicy,
 ): Promise<() => void> {
   const target = new URL(loginUrl);
   if (
@@ -40,12 +49,40 @@ export async function guardLoginRequests(
   ) {
     throw new Error("Invalid login destination policy");
   }
+  if (policy) await context.clearPermissions();
   let policyReason: RuntimeLoginPolicyReason | undefined;
   let pendingRequests = 0;
+  let active = true;
+  let policyFailed = false;
+  let drained: (() => void) | undefined;
+  if (policy)
+    requestSettlements.set(context, async () => {
+      active = false;
+      if (!pendingRequests) return;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          record("transport-error");
+          drained = undefined;
+          resolve();
+        }, 2_000);
+        drained = () => {
+          clearTimeout(timer);
+          drained = undefined;
+          resolve();
+        };
+      });
+    });
   const record = (reason: RuntimeLoginPolicyReason): void => {
     policyReason ??= reason;
   };
   const assertRequestsAllowed = (): void => {
+    if (policyFailed)
+      throw new RuntimeLoginFailure(
+        "request-policy",
+        "unconfirmed",
+        undefined,
+        "request-policy",
+      );
     if (policyReason)
       throw new RuntimeLoginFailure(
         "request-policy",
@@ -58,6 +95,7 @@ export async function guardLoginRequests(
     // Unsettled transport cannot establish a policy-clean assertion outcome.
     if (pendingRequests > 0) record("transport-error");
     assertRequestsAllowed();
+    policy?.assertComplete();
   });
   await context.routeWebSocket("**/*", (socket) => {
     record("websocket");
@@ -67,6 +105,10 @@ export async function guardLoginRequests(
     pendingRequests += 1;
     try {
       const request = route.request();
+      if (policy && (policyReason || policyFailed)) {
+        await route.abort("blockedbyclient");
+        return;
+      }
       const url = new URL(request.url());
       if (url.origin !== approvedOrigin || url.username || url.password) {
         record("off-origin");
@@ -78,7 +120,24 @@ export async function guardLoginRequests(
         await route.abort("blockedbyclient");
         return;
       }
-      const response = await route.fetch({ maxRedirects: 0 });
+      if (policy) {
+        let allowed: boolean;
+        try {
+          allowed = await policy.allow(request);
+        } catch {
+          policyFailed = true;
+          allowed = false;
+        }
+        if (!active || !allowed || policyReason || policyFailed) {
+          if (!active && allowed) policyFailed = true;
+          await route.abort("blockedbyclient");
+          return;
+        }
+      }
+      const response = await route.fetch({
+        maxRedirects: 0,
+        ...(policy ? { maxRetries: 0, timeout: 10_000 } : {}),
+      });
       try {
         // Playwright routing does not intercept subsequent HTTP redirect hops.
         // Reject even same-origin redirects rather than handing a 30x to Chromium.
@@ -86,6 +145,19 @@ export async function guardLoginRequests(
           record("http-redirect");
           await route.abort("blockedbyclient");
           return;
+        }
+        if (policy) {
+          if (policyReason || policyFailed) {
+            await route.abort("blockedbyclient");
+            return;
+          }
+          try {
+            policy.response(request, response.status());
+          } catch {
+            policyFailed = true;
+            await route.abort("blockedbyclient");
+            return;
+          }
         }
         await route.fulfill({ response });
       } finally {
@@ -96,6 +168,7 @@ export async function guardLoginRequests(
       await route.abort("blockedbyclient").catch(() => undefined);
     } finally {
       pendingRequests -= 1;
+      if (!pendingRequests) drained?.();
     }
   });
   return assertRequestsAllowed;
@@ -194,9 +267,13 @@ export async function withFreshLoginPage(
     page.setDefaultTimeout(Math.max(1, deadline - Date.now()));
     page.setDefaultNavigationTimeout(Math.max(1, deadline - Date.now()));
     stage = "submission-assertion";
-    await consume(page, (next) => {
-      stage = new RuntimeLoginFailure(next, "unconfirmed").failureStage;
-    });
+    try {
+      await consume(page, (next) => {
+        stage = new RuntimeLoginFailure(next, "unconfirmed").failureStage;
+      });
+    } finally {
+      await requestSettlements.get(context)?.();
+    }
     checkActive();
   };
   try {
