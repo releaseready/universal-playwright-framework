@@ -1675,6 +1675,7 @@ for (const state of [
   "onboarding",
   "unknown-gate",
   "missing-me",
+  "login-428",
   "visible-onboarding",
   "registration",
 ] as const) {
@@ -1706,6 +1707,8 @@ for (const state of [
             '<div id="brandLogo">Partay</div><div id="overlay"><input id="username"><input id="password" type="password" autocomplete="current-password"><div id="authUp" hidden></div><button id="authGo">Sign in</button></div><div id="onboard" hidden>Onboarding</div><div id="bottomnav" hidden>Navigation</div>',
         );
       } else {
+        if (state === "login-428" && req.url === "/auth/login")
+          res.writeHead(428);
         res.end('{"token":"OWNED_RESPONSE_CANARY"}');
       }
     });
@@ -1806,13 +1809,15 @@ for (const state of [
       } else {
         await assert.rejects(operation, (error) => {
           assertSafe(error);
-          assert.notEqual(
-            partayLoginFailureReport(error).failureClassification,
-            "assertion-failed",
-          );
+          const report = partayLoginFailureReport(error);
+          assert.equal(report.status, "not-verified");
+          assert.equal(report.automaticRetryAttempted, false);
+          assert.notEqual(report.failureClassification, "assertion-failed");
           return true;
         });
         assert.ok(!hits.includes("GET /agent/characters"));
+        if (state === "login-428")
+          assert.deepEqual(hits, ["GET /", "POST /auth/login"]);
         if (state === "registration") assert.deepEqual(hits, ["GET /"]);
       }
       assert.equal(contextClosed, true);
