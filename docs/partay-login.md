@@ -51,8 +51,10 @@ A fresh non-persistent Chromium browser/context is acquired for each call and
 closed in `finally`. The operation races cancellation/the overall deadline, so
 even a never-settling browser operation cannot retain the provider indefinitely.
 Cancellation requests both context and browser closure independently. Final
-cleanup allows at most **1,000 ms total** (two 500 ms stages): context closure
-gets a head start, but cannot prevent the browser-close attempt. Neither close
+cleanup allows at most **5,000 ms total**, approved for the local MVP on
+1 November 2026. Browser transport is set offline before context teardown.
+Context closure gets a 500 ms head start, but cannot prevent the browser-close
+attempt; the browser uses the remaining shared budget. Neither close
 promise must settle for the consumer to return a fixed safe failure and allow
 provider disposal. Late acquisition also requests closure; late rejections are
 handled, not emitted as unhandled promise rejections. The operation deadline is
@@ -366,7 +368,7 @@ Only successful 2xx critical responses plus the exact URL, visible exact Partay
 logo and hidden login overlay can complete this scope. `#onboard` must exist and
 remain hidden, and the normal `#bottomnav` must be visible. Missing/ambiguous gates,
 onboarding, 428/email verification, unsuccessful responses, redirects, retries or
-unknown activity produce `not-verified`. No profile or response body is inspected.
+unknown activity produce `not-verified`. No profile or response body is inspected. The owner accepted this authentication-only boundary for the local MVP on 1 November 2026: exact account identity remains independently unverified. `identityReadSucceeded` means only the bounded `/me` request returned a successful status, not an identity-field comparison.
 
 After `/me` succeeds, six known background GETs are **aborted**, not fulfilled:
 `/groups`, `/agent/greeting`, `/me/notifications`, `/dm`,
@@ -403,3 +405,5 @@ It showed `#authGo` → `authSubmit()` → `login()` in sign-in mode, POST `/aut
 and awaited GET `/me` before overlay dismissal. Server effects and live customer
 acceptance have not been verified. Tests use owned loopback pages and synthetic
 canaries; no actual customer run is part of this change.
+
+Work deadline expiry is captured before cleanup begins. Confirmed cleanup within its separate five-second allowance does not turn completed work into a timeout. Genuine work expiry, explicit cancellation during cleanup, and expiry of the cleanup budget still prevent success.

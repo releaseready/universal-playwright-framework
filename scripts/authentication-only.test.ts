@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import test from "node:test";
 import {
   guardLoginRequests,
+  LOGIN_CLEANUP_TIMEOUT_MS,
   withFreshLoginPage,
 } from "../src/execution/runtime-login-browser";
 import { createAuthenticationOnlyPolicy } from "../src/customer-login/authentication-only";
@@ -248,6 +249,7 @@ for (const pending of ["delayed", "never-settles", "cancelled"]) {
       const enteredTransport = new Promise<void>((resolve) => {
         transportStarted = resolve;
       });
+      const timeoutMs = 1500;
       const started = Date.now();
       const operation = withFreshLoginPage(
         async (page) => {
@@ -286,11 +288,13 @@ for (const pending of ["delayed", "never-settles", "cancelled"]) {
           await enteredTransport;
           if (pending === "cancelled") controller.abort();
         },
-        { timeoutMs: 1500, signal: controller.signal },
+        { timeoutMs, signal: controller.signal },
       );
       if (pending === "delayed") await operation;
       else await assert.rejects(operation);
-      assert.ok(Date.now() - started < 4000);
+      assert.ok(
+        Date.now() - started < timeoutMs + LOGIN_CLEANUP_TIMEOUT_MS + 500,
+      );
     });
   });
 }

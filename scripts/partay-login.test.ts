@@ -642,6 +642,7 @@ for (const reason of RUNTIME_LOGIN_POLICY_REASONS) {
                     closes += 1;
                   },
                   newContext: async () => ({
+                    setOffline: async () => undefined,
                     close: async () => {
                       closes += 1;
                     },
@@ -807,6 +808,7 @@ for (const fault of ["launch", "context", "page"] as const) {
             newContext: async () => {
               if (fault === "context") throw new Error(canary.password);
               return {
+                setOffline: async () => undefined,
                 close: async () => {
                   contextCloses += 1;
                 },
@@ -1494,6 +1496,7 @@ for (const outcome of [
         abort: async () => undefined,
       } as unknown as Route);
     const context = {
+      setOffline: async () => undefined,
       routeWebSocket: async () => undefined,
       route: async (_pattern: string, handler: typeof requestHandler) => {
         requestHandler = handler;
@@ -1566,7 +1569,9 @@ for (const outcome of [
           "policy-before-error": "request-policy",
           "policy-during-cleanup": "request-policy",
           "cancel-during-cleanup": "interrupted",
-          "deadline-during-cleanup": "timed-out",
+          // The comparison completed before the work deadline. Confirmed
+          // cleanup uses its own budget and must preserve that evidence.
+          "deadline-during-cleanup": "assertion-failed",
           "policy-with-cancel-during-cleanup": "request-policy",
           "policy-with-deadline-during-cleanup": "request-policy",
           "pending-transport": "request-policy",

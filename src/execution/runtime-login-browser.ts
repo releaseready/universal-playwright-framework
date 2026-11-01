@@ -32,7 +32,9 @@ export interface LoginRequestPolicy {
 }
 const requestSettlements = new WeakMap<BrowserContext, () => Promise<void>>();
 
-export const LOGIN_CLEANUP_TIMEOUT_MS = 1_000;
+// Owner-approved local MVP shutdown allowance; transport is isolated immediately.
+export const LOGIN_CLEANUP_TIMEOUT_MS = 5_000;
+const CONTEXT_CLOSE_GRACE_MS = 500;
 
 // Check the registered guard after work AND cleanup, including failed assertions.
 const requestPolicyChecks = new WeakMap<BrowserContext, () => void>();
@@ -211,12 +213,42 @@ export async function withFreshLoginPage(
   }
   const controller = new AbortController();
   const closures = new Map<Browser | BrowserContext, Promise<boolean>>();
+  let transportIsolation: Promise<void> | undefined;
+  let isolationDeadline = 0;
   const close = (resource: Browser | BrowserContext | undefined): void => {
     if (resource && !closures.has(resource)) {
       closures.set(
         resource,
         Promise.resolve()
-          .then(() => resource.close())
+          .then(async () => {
+            // Context teardown disables route interception before Chromium has
+            // finished pending navigation. Cut browser transport first so a
+            // late document request cannot escape during that interval.
+            if (resource === context) {
+              isolationDeadline = Date.now() + CONTEXT_CLOSE_GRACE_MS;
+              transportIsolation ??= context.setOffline(true);
+              await transportIsolation;
+            } else if (transportIsolation) {
+              // Cancellation starts both closes. Give isolation a bounded
+              // chance to finish before browser shutdown interrupts its ack;
+              // a stuck isolation call must not prevent process shutdown.
+              let timer: NodeJS.Timeout | undefined;
+              try {
+                await Promise.race([
+                  transportIsolation.catch(() => undefined),
+                  new Promise<void>((resolve) => {
+                    timer = setTimeout(
+                      resolve,
+                      Math.max(0, isolationDeadline - Date.now()),
+                    );
+                  }),
+                ]);
+              } finally {
+                clearTimeout(timer);
+              }
+            }
+            await resource.close();
+          })
           .then(
             () => true,
             () => false,
@@ -228,6 +260,8 @@ export async function withFreshLoginPage(
   let context: BrowserContext | undefined;
   let pendingAcquisition = false;
   let acquisitionInterrupted = false;
+  let workDeadlineExpired = false;
+  let cleanupDeadlineExpired = false;
   let stage: RuntimeLoginFailureStage = "browser-startup";
   let failureStage: RuntimeLoginFailureStage | undefined;
   let policyReason: RuntimeLoginPolicyReason | undefined;
@@ -312,11 +346,14 @@ export async function withFreshLoginPage(
             : "operational");
     acquisitionInterrupted = pendingAcquisition;
   } finally {
+    // Freeze work expiry before shutdown starts: cleanup owns a separate budget.
+    workDeadlineExpired = Date.now() >= deadline;
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", abort);
     if (rejectInterrupted)
       controller.signal.removeEventListener("abort", rejectInterrupted);
     close(context);
+    const cleanupDeadline = Date.now() + LOGIN_CLEANUP_TIMEOUT_MS;
     let cleanupTimer: NodeJS.Timeout | undefined;
     try {
       // Give normal context shutdown a head start, but never let it prevent
@@ -325,7 +362,7 @@ export async function withFreshLoginPage(
         await Promise.race([
           closures.get(context),
           new Promise<void>((resolve) => {
-            cleanupTimer = setTimeout(resolve, LOGIN_CLEANUP_TIMEOUT_MS / 2);
+            cleanupTimer = setTimeout(resolve, CONTEXT_CLOSE_GRACE_MS);
           }),
         ]);
         clearTimeout(cleanupTimer);
@@ -337,8 +374,11 @@ export async function withFreshLoginPage(
         ),
         new Promise<false>((resolve) => {
           cleanupTimer = setTimeout(
-            () => resolve(false),
-            LOGIN_CLEANUP_TIMEOUT_MS / 2,
+            () => {
+              cleanupDeadlineExpired = true;
+              resolve(false);
+            },
+            Math.max(0, cleanupDeadline - Date.now()),
           );
         }),
       ]);
@@ -352,13 +392,15 @@ export async function withFreshLoginPage(
       clearTimeout(cleanupTimer);
     }
   }
-  // Cleanup has its own bounded budget. The work timer/listener are already
-  // detached, so recheck both before publishing evidence or a success receipt.
+  // Keep late cancellation visible, but do not charge confirmed shutdown time
+  // to completed work. Unconfirmed shutdown retains its own failure stage.
+  if (!failureStage && cleanupStatus === "unconfirmed")
+    failureStage = "cleanup";
   const finalInterruption =
     interruption ??
     (options.signal?.aborted
       ? "interrupted"
-      : Date.now() >= deadline
+      : workDeadlineExpired || cleanupDeadlineExpired
         ? "timed-out"
         : undefined);
   if (finalInterruption) {
