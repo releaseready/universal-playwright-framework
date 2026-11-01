@@ -145,3 +145,20 @@ test("Given browser disconnection before slow process cleanup completes, the dea
   await finished;
   assert.equal(cleanupComplete, true);
 });
+
+test("Given completed work and stalled cleanup beyond the work deadline, preserve the cleanup failure stage and timeout classification", async () => {
+  const owned = fixture(
+    async () => {},
+    async () => new Promise<void>(() => undefined),
+  );
+  await assert.rejects(
+    withFreshLoginPage(async () => {}, { ...owned, timeoutMs: 1000 }),
+    (error) => {
+      assert.ok(error instanceof RuntimeLoginFailure);
+      assert.equal(error.failureStage, "cleanup");
+      assert.equal(error.failureClassification, "timed-out");
+      assert.equal(error.cleanupStatus, "unconfirmed");
+      return true;
+    },
+  );
+});

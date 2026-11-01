@@ -387,6 +387,10 @@ export async function withFreshLoginPage(
   }
   // Cleanup has its own bounded budget. The work timer/listener are already
   // detached, so recheck both before publishing evidence or a success receipt.
+  // Completed work followed by unconfirmed shutdown is a cleanup failure,
+  // even if the overall work deadline also expires during that shutdown.
+  if (!failureStage && cleanupStatus === "unconfirmed")
+    failureStage = "cleanup";
   const finalInterruption =
     interruption ??
     (options.signal?.aborted
