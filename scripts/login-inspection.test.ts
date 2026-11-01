@@ -3,7 +3,10 @@ import { createServer } from "node:http";
 import test from "node:test";
 import { chromium, type Page } from "@playwright/test";
 import { RuntimeLoginFailure } from "../src/input-preparation/runtime-login";
-import { withFreshLoginPage } from "../src/execution/runtime-login-browser";
+import {
+  LOGIN_CLEANUP_TIMEOUT_MS,
+  withFreshLoginPage,
+} from "../src/execution/runtime-login-browser";
 import {
   guardInspectionRequests,
   observeLoginControls,
@@ -607,7 +610,7 @@ for (const interruption of ["cancel", "deadline"] as const) {
           return true;
         },
       );
-      assert.ok(Date.now() - start < 2500);
+      assert.ok(Date.now() - start < 1000 + LOGIN_CLEANUP_TIMEOUT_MS + 500);
     });
   });
 }
