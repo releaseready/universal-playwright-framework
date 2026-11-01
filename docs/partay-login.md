@@ -405,3 +405,5 @@ It showed `#authGo` → `authSubmit()` → `login()` in sign-in mode, POST `/aut
 and awaited GET `/me` before overlay dismissal. Server effects and live customer
 acceptance have not been verified. Tests use owned loopback pages and synthetic
 canaries; no actual customer run is part of this change.
+
+Work deadline expiry is captured before cleanup begins. Confirmed cleanup within its separate five-second allowance does not turn completed work into a timeout. Genuine work expiry, explicit cancellation during cleanup, and expiry of the cleanup budget still prevent success.

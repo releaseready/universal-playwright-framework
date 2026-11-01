@@ -162,3 +162,58 @@ test("Given completed work and stalled cleanup beyond the work deadline, preserv
     },
   );
 });
+
+test("Given work completed before its deadline, confirmed cleanup crossing that deadline still succeeds within the separate cleanup budget", async () => {
+  const owned = fixture(
+    async () => {},
+    async () => delay(200),
+  );
+  await withFreshLoginPage(async () => {}, { ...owned, timeoutMs: 100 });
+  assert.equal(owned.events.at(-1), "browser-closed");
+});
+
+test("Given work already past its deadline before the timer callback runs, cleanup cannot turn it into success", async () => {
+  const now = Date.now;
+  let elapsed = 0;
+  Date.now = () => now() + elapsed;
+  const owned = fixture(async () => {});
+  try {
+    await assert.rejects(
+      withFreshLoginPage(
+        async () => {
+          elapsed = 200;
+        },
+        { ...owned, timeoutMs: 100 },
+      ),
+      (error) => {
+        assert.ok(error instanceof RuntimeLoginFailure);
+        assert.equal(error.failureClassification, "timed-out");
+        assert.equal(error.failureStage, "submission-assertion");
+        assert.equal(error.cleanupStatus, "confirmed");
+        return true;
+      },
+    );
+  } finally {
+    Date.now = now;
+  }
+});
+
+test("Given cancellation during confirmed cleanup, completed work still reports interrupted", async () => {
+  const controller = new AbortController();
+  const owned = fixture(
+    async () => {},
+    async () => {
+      controller.abort();
+      await delay(10);
+    },
+  );
+  await assert.rejects(
+    withFreshLoginPage(async () => {}, { ...owned, signal: controller.signal }),
+    (error) => {
+      assert.ok(error instanceof RuntimeLoginFailure);
+      assert.equal(error.failureClassification, "interrupted");
+      assert.equal(error.cleanupStatus, "confirmed");
+      return true;
+    },
+  );
+});

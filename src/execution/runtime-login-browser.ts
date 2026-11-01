@@ -260,6 +260,8 @@ export async function withFreshLoginPage(
   let context: BrowserContext | undefined;
   let pendingAcquisition = false;
   let acquisitionInterrupted = false;
+  let workDeadlineExpired = false;
+  let cleanupDeadlineExpired = false;
   let stage: RuntimeLoginFailureStage = "browser-startup";
   let failureStage: RuntimeLoginFailureStage | undefined;
   let policyReason: RuntimeLoginPolicyReason | undefined;
@@ -344,6 +346,8 @@ export async function withFreshLoginPage(
             : "operational");
     acquisitionInterrupted = pendingAcquisition;
   } finally {
+    // Freeze work expiry before shutdown starts: cleanup owns a separate budget.
+    workDeadlineExpired = Date.now() >= deadline;
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", abort);
     if (rejectInterrupted)
@@ -370,7 +374,10 @@ export async function withFreshLoginPage(
         ),
         new Promise<false>((resolve) => {
           cleanupTimer = setTimeout(
-            () => resolve(false),
+            () => {
+              cleanupDeadlineExpired = true;
+              resolve(false);
+            },
             Math.max(0, cleanupDeadline - Date.now()),
           );
         }),
@@ -385,17 +392,15 @@ export async function withFreshLoginPage(
       clearTimeout(cleanupTimer);
     }
   }
-  // Cleanup has its own bounded budget. The work timer/listener are already
-  // detached, so recheck both before publishing evidence or a success receipt.
-  // Completed work followed by unconfirmed shutdown is a cleanup failure,
-  // even if the overall work deadline also expires during that shutdown.
+  // Keep late cancellation visible, but do not charge confirmed shutdown time
+  // to completed work. Unconfirmed shutdown retains its own failure stage.
   if (!failureStage && cleanupStatus === "unconfirmed")
     failureStage = "cleanup";
   const finalInterruption =
     interruption ??
     (options.signal?.aborted
       ? "interrupted"
-      : Date.now() >= deadline
+      : workDeadlineExpired || cleanupDeadlineExpired
         ? "timed-out"
         : undefined);
   if (finalInterruption) {

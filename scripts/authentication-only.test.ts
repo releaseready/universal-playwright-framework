@@ -249,10 +249,7 @@ for (const pending of ["delayed", "never-settles", "cancelled"]) {
       const enteredTransport = new Promise<void>((resolve) => {
         transportStarted = resolve;
       });
-      // Successful delayed transport must leave room for the approved cleanup
-      // budget; timeout/cancellation cases retain the short work deadline.
-      const timeoutMs =
-        pending === "delayed" ? 1500 + LOGIN_CLEANUP_TIMEOUT_MS : 1500;
+      const timeoutMs = 1500;
       const started = Date.now();
       const operation = withFreshLoginPage(
         async (page) => {
