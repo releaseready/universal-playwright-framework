@@ -26,13 +26,32 @@ describe("TypeScript source policy", () => {
       findAuthoredJavaScriptPaths([
         "dist/app.js",
         "build/app.js",
-        "node_modules/package/index.js",
+        "generated/app.js",
         "vendor/browser.js",
-        "src/generated/client.js",
+        "third_party/tool.js",
+        "node_modules/package/index.js",
+        "src/node_modules/package/index.js",
         "src/client.generated.js",
         "src/client.min.js",
       ]),
       [],
+    );
+  });
+
+  it("does not exempt nested source directories just because they resemble generated or vendor output", () => {
+    assert.deepEqual(
+      findAuthoredJavaScriptPaths([
+        "scripts/build/release.js",
+        "src/out/format.js",
+        "src/vendor/owned.js",
+        "tests/generated/helpers.js",
+      ]),
+      [
+        "scripts/build/release.js",
+        "src/out/format.js",
+        "src/vendor/owned.js",
+        "tests/generated/helpers.js",
+      ],
     );
   });
 

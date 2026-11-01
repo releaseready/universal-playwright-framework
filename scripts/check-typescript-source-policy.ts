@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 const JAVASCRIPT_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".cjs"]);
-const GENERATED_OR_VENDOR_DIRECTORIES = new Set([
+const GENERATED_OR_VENDOR_ROOT_DIRECTORIES = new Set([
   ".cache",
   ".next",
   ".nuxt",
@@ -39,8 +39,9 @@ export function findAuthoredJavaScriptPaths(
       }
 
       if (
-        segments.some((segment) =>
-          GENERATED_OR_VENDOR_DIRECTORIES.has(segment.toLowerCase()),
+        segments.some((segment) => segment.toLowerCase() === "node_modules") ||
+        GENERATED_OR_VENDOR_ROOT_DIRECTORIES.has(
+          (segments[0] ?? "").toLowerCase(),
         )
       ) {
         return false;
