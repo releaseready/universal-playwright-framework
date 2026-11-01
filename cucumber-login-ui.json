@@ -1,9 +1,13 @@
 {
   "default": {
-    "paths": ["features/login-ui.feature"],
+    "paths": [
+      "features/login-ui.feature",
+      "features/rrdweb-8-local-pilot.feature"
+    ],
     "require": [
       "dist/cucumber/features/support/hooks.js",
-      "dist/cucumber/features/steps/login-ui.steps.js"
+      "dist/cucumber/features/steps/login-ui.steps.js",
+      "dist/cucumber/features/steps/rrdweb-8-local-pilot.steps.js"
     ],
     "format": ["progress"]
   }
