@@ -50,6 +50,8 @@
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
     "prepare": "npm run build",
+    "check:typescript": "npm run build && node dist/cucumber/scripts/check-typescript-source-policy.js",
+    "test:typescript-source-policy": "npm run check:typescript && node --test dist/cucumber/scripts/typescript-source-policy.test.js",
     "test:login-inspection": "npm run build:cucumber && node --test dist/cucumber/scripts/login-inspection.test.js",
     "inspect:partay-login": "npm run build:cucumber && node dist/cucumber/scripts/inspect-partay-login.js",
     "test:authentication-only": "npm run build:cucumber && node --test dist/cucumber/scripts/authentication-only.test.js"

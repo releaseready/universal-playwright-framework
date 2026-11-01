@@ -4,7 +4,7 @@ This maintained Cucumber/Gherkin path runs an assertion-backed browser scenario 
 
 ## Setup and run
 
-Requirements: Node.js 18+ and npm.
+Requirements: Node.js `^22.12.0` or `>=24.0.0` and npm, matching the version declared in `package.json`.
 
 ```bash
 npm ci
@@ -17,6 +17,14 @@ The command reports the scenario's actual outcome in the terminal and writes Cuc
 Cucumber steps and hooks have a validated 15-second default timeout. To adjust it for a slower local machine, set `CUCUMBER_STEP_TIMEOUT_MS` to an integer from `12000` through `60000` (for example, `CUCUMBER_STEP_TIMEOUT_MS=20000 npm run test:features -- --tags @synthetic`). Values outside that range are rejected before execution. Playwright launch/navigation are bounded at 10 seconds, while actions and assertions retain their 5-second timeout, so their useful error details surface before Cucumber's outer timeout.
 
 Hooks, steps, and regression tests are authored in TypeScript and strictly compiled by the repository's existing TypeScript compiler. `cucumber.json` points Cucumber to generated, ignored JavaScript output; regression runs use a separate config with no JSON report formatter.
+
+Run the repository-wide strict TypeScript and authored-source policy check with:
+
+```bash
+npm run check:typescript
+```
+
+This builds the application, tests, Cucumber steps/hooks, and scripts with strict TypeScript settings, then rejects authored `.js`, `.jsx`, `.mjs`, or `.cjs` files. Generated build and test output, vendor directories, and non-code files such as Gherkin, JSON, and YAML are excluded. Tool configuration files are not implicitly exempt. Run `npm run test:typescript-source-policy` to exercise the policy's inclusion and exclusion rules.
 
 Run the local timeout and cleanup regression checks with:
 
