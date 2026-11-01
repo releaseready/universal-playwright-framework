@@ -5,7 +5,8 @@
     "require": [
       "dist/cucumber/features/support/hooks.js",
       "dist/cucumber/features/steps/synthetic.steps.js",
-      "dist/cucumber/features/steps/login-ui.steps.js"
+      "dist/cucumber/features/steps/login-ui.steps.js",
+      "dist/cucumber/features/steps/rrdweb-8-local-pilot.steps.js"
     ],
     "format": ["progress", "json:reports/cucumber-results.json"]
   }

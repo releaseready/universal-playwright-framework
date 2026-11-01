@@ -96,7 +96,7 @@ async function openPilotPage(world: LocalPilotWorld): Promise<void> {
   await page.setContent(pilotLoginFixture);
   world.approvedLocalUrl = page.url();
   world.productIdentity = productIdentity;
-  world.targetRecipe = targetRecipe;
+  world.targetRecipe = { ...targetRecipe };
   world.loginResponse = "accepted";
   await page.locator("#product-identity").evaluate((element, value) => {
     element.textContent = value;
@@ -173,12 +173,23 @@ Then(
   "only the target recipe account reaches the local login form",
   async function (this: LocalPilotWorld) {
     const page = pilotPage(this);
+    const recipe = this.targetRecipe;
+    if (!recipe) {
+      throw new Error("Owned synthetic target recipe is unavailable");
+    }
+    const targetAccount = await page
+      .locator("#overlay")
+      .getAttribute("data-submitted-account");
+    const productAccount = await page
+      .locator("#product-identity")
+      .textContent();
+    assert.equal(targetAccount, recipe.account);
+    assert.equal(productAccount, this.productIdentity);
     await expect(page.locator("#overlay")).toHaveAttribute(
       "data-submitted-account",
-      targetRecipe.account,
+      recipe.account,
     );
-    assert.notEqual(targetRecipe.account, productIdentity);
-    assert.equal(this.productIdentity, productIdentity);
+    assert.notEqual(targetAccount, productAccount);
   },
 );
 
@@ -273,7 +284,13 @@ When(
       };
     }, this.requestUrls.length);
 
+    const context = page.context();
+    let closeEventObserved = false;
+    page.once("close", () => {
+      closeEventObserved = true;
+    });
     await page.close();
+    const pageRemainsAttached = context.pages().includes(page);
     this.page = undefined;
     this.evidence = {
       provenance: "owned-synthetic-offline",
@@ -281,7 +298,10 @@ When(
       scope: "authentication-only",
       observation,
       exclusions: ["customer login", "post-login application behavior"],
-      cleanupStatus: page.isClosed() ? "confirmed" : "unknown",
+      cleanupStatus:
+        closeEventObserved && page.isClosed() && !pageRemainsAttached
+          ? "confirmed"
+          : "unknown",
     };
   },
 );
