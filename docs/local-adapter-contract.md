@@ -31,6 +31,14 @@ if (!result.accepted) {
 }
 ```
 
+This installed adapter contract is currently limited to the owned-synthetic
+request and its fixed reviewed fixture inputs. `executeAdapter` does not accept
+a `PreparedInputDescriptor` or `RuntimeSecretProvider`; the existing
+descriptor/provider consumer is a separate API. Therefore an installed
+synthetic smoke pass does not prove the active local-pilot descriptor/provider
+handoff or authorize a customer run. That adapter binding remains gated on an
+agreed Web3-to-Web6 contract and central approval.
+
 `fixtures/adapter/v1-compatible.json` is the pinned complete valid example;
 `v1-rejected.json` is an intentionally unsupported external target. The central
 Git revision in these synthetic examples is an illustrative 40-hex caller value,
