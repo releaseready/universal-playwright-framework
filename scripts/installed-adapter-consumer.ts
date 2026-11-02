@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { mock } from "node:test";
 import { examples } from "../features/adapter/examples";
 import rejectedExample from "../fixtures/adapter/v1-rejected.json";
 import type { executeAdapter } from "../src/adapter/v1";
@@ -164,6 +165,74 @@ async function main(): Promise<void> {
   assert.equal(result.report.scenarios[0].steps.length, 3);
   assert.equal(result.lifecycle.resourceCleanup.browserProcessStopped, true);
   assert.deepEqual(result.run, request.run);
+  assert.equal(result.callerId, context.callerId);
+  assert.notEqual(result.report.runReference, request.run.id);
+  assert.deepEqual(result.approval, request.approval);
+  assert.deepEqual(result.inputs, request.inputs);
+
+  const failedExample = examples(["assertion-failure"]);
+  failedExample.request.limits.retryCount = 0;
+  const failed = await adapter.executeAdapter(
+    failedExample.request,
+    failedExample.context,
+  );
+  assert.ok(failed.accepted, JSON.stringify(failed));
+  if (!failed.accepted) throw new Error("Expected an admitted synthetic run");
+  assert.equal(failed.report.status, "failed");
+  assert.equal(failed.report.attempts.length, 1);
+  assert.equal(failed.report.attempts[0].status, "failed");
+  assert.equal(failed.lifecycle.attempts.length, 1);
+  assert.equal(failed.lifecycle.resourceCleanup.status, "confirmed");
+  assert.equal(failed.lifecycle.dataRestoration.status, "unknown");
+  assert.deepEqual(failed.run, failedExample.request.run);
+  assert.equal(failed.callerId, failedExample.context.callerId);
+  assert.deepEqual(failed.approval, failedExample.request.approval);
+  assert.deepEqual(failed.inputs, failedExample.request.inputs);
+
+  const adapterRequire = createRequire(
+    requireFromConsumer.resolve("@universal/playwright-framework/adapter/v1"),
+  );
+  const execution = adapterRequire(
+    "../execution",
+  ) as typeof import("../src/execution");
+  const uncertainExample = examples();
+  const executionFailure = mock.method(
+    execution,
+    "executeReviewedScenarios",
+    async () => {
+      throw new Error("SYNTHETIC_PRIVATE_ENGINE_DIAGNOSTIC");
+    },
+  );
+  try {
+    const uncertain = await adapter.executeAdapter(
+      uncertainExample.request,
+      uncertainExample.context,
+    );
+    assert.ok(uncertain.accepted, JSON.stringify(uncertain));
+    if (!uncertain.accepted)
+      throw new Error("Expected an admitted synthetic run");
+    assert.equal(uncertain.report.status, "incomplete");
+    assert.equal(uncertain.report.attempts.length, 0);
+    assert.equal(uncertain.lifecycle.resourceCleanup.status, "unknown");
+    assert.equal(
+      uncertain.lifecycle.resourceCleanup.browserProcessStopped,
+      null,
+    );
+    assert.equal(uncertain.lifecycle.attempts.length, 0);
+    assert.equal(uncertain.lifecycle.dataRestoration.status, "unknown");
+    assert.deepEqual(uncertain.run, uncertainExample.request.run);
+    assert.equal(uncertain.callerId, uncertainExample.context.callerId);
+    assert.deepEqual(uncertain.approval, uncertainExample.request.approval);
+    assert.deepEqual(uncertain.inputs, uncertainExample.request.inputs);
+    assert.equal(executionFailure.mock.callCount(), 1);
+    assert.doesNotMatch(
+      JSON.stringify(uncertain),
+      /SYNTHETIC_PRIVATE_ENGINE_DIAGNOSTIC|Error:|node_modules/,
+    );
+  } finally {
+    executionFailure.mock.restore();
+  }
+
   // Tampering with the installed worker must invalidate approval, not self-approve.
   const worker = path.join(path.dirname(exportPath), "../execution/index.js");
   const original = readFileSync(worker);
