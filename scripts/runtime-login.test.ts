@@ -410,6 +410,71 @@ test("provider exceptions and expiry during async resolution cannot leak or star
   assert.equal(browserStarts, 0);
 });
 
+test("runtime login errors never log canaries or mutate the ordinary worker payload", async () => {
+  const { request, descriptor } = fixture();
+  const ordinaryPayload = JSON.stringify({
+    scenario: {
+      id: descriptor.scenarios[0]?.id,
+      values: descriptor.scenarios[0]?.values,
+    },
+    environment: descriptor.environment,
+    redirectTargetUrl: "http://127.0.0.1:41731/redirect",
+  });
+  const previousPayload = process.env.WEB_EXECUTION_PAYLOAD;
+  const previousArguments = [...process.argv];
+  const logged: unknown[][] = [];
+  const originals = {
+    debug: console.debug,
+    info: console.info,
+    log: console.log,
+    warn: console.warn,
+    error: console.error,
+  };
+  const capture = (...args: unknown[]) => logged.push(args);
+  process.env.WEB_EXECUTION_PAYLOAD = ordinaryPayload;
+  console.debug = capture;
+  console.info = capture;
+  console.log = capture;
+  console.warn = capture;
+  console.error = capture;
+  try {
+    assertNoCanaries(ordinaryPayload);
+    await assert.rejects(
+      consumeRuntimeLoginInputs(
+        descriptor,
+        request,
+        new InMemoryRuntimeSecretProvider(request, canary),
+        async (account) => {
+          assert.equal(account.username, canary.username);
+          assert.equal(account.password, canary.password);
+          assert.equal(process.env.WEB_EXECUTION_PAYLOAD, ordinaryPayload);
+          assert.deepEqual(process.argv, previousArguments);
+          throw new Error(`${canary.username}:${canary.password}`);
+        },
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof RuntimeLoginError);
+        assertNoCanaries(inspect(error));
+        return true;
+      },
+    );
+    assert.equal(process.env.WEB_EXECUTION_PAYLOAD, ordinaryPayload);
+    assert.deepEqual(process.argv, previousArguments);
+  } finally {
+    console.debug = originals.debug;
+    console.info = originals.info;
+    console.log = originals.log;
+    console.warn = originals.warn;
+    console.error = originals.error;
+    if (previousPayload === undefined) {
+      delete process.env.WEB_EXECUTION_PAYLOAD;
+    } else {
+      process.env.WEB_EXECUTION_PAYLOAD = previousPayload;
+    }
+  }
+  assertNoCanaries(inspect(logged));
+});
+
 test("mid-prompt cancellation, expiry, blank and control input restore non-echoing terminal state", async () => {
   for (const outcome of [
     "cancel",
