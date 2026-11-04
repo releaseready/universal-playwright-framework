@@ -2,6 +2,8 @@
  * Test data fixtures and generators
  */
 
+import { TestUtils } from '../src/utils/test-utils';
+
 export interface UserData {
   firstName: string;
   lastName: string;
@@ -130,10 +132,7 @@ export class TestDataFactory {
    * Generate phone number
    */
   private static generatePhoneNumber(): string {
-    const areaCode = Math.floor(Math.random() * 900) + 100;
-    const exchange = Math.floor(Math.random() * 900) + 100;
-    const number = Math.floor(Math.random() * 9000) + 1000;
-    return `${areaCode}-${exchange}-${number}`;
+    return TestUtils.generateRandomPhoneNumber();
   }
 
   /**

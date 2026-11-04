@@ -20,8 +20,11 @@ import { reviewDataReferences } from "../../src/input-preparation/data-reference
 import {
   validateFeatureFile,
   type FeatureValidation,
-  type ReviewedStepManifest,
 } from "../../src/validation/feature-validator";
+import {
+  createOutlineFixtureFields,
+  createValidationManifest,
+} from "../../fixtures/input-preparation/reviewed-fixtures";
 import type {
   ScenarioApproval,
   ScenarioSelectionFilters,
@@ -33,16 +36,7 @@ const inputFixturePath = path.join(
   "fixtures/input-preparation/approved-scenarios.json",
 );
 const featurePath = "fixtures/validation/reviewed-scenarios.feature";
-const manifest: ReviewedStepManifest = {
-  implementationRevision: "synthetic-steps-1",
-  steps: [
-    { id: "common-setup", expression: "common setup is ready" },
-    { id: "rule-setup", expression: "rule setup is ready" },
-    { id: "open-demo", expression: "the demo page is open" },
-    { id: "activate", expression: "I activate {word}" },
-    { id: "outcome", expression: "outcome is {word}" },
-  ],
-};
+const manifest = createValidationManifest("synthetic-steps-1");
 const approvedScenarioIds = [
   "approved-basic",
   "approved-outline/row-a",
@@ -58,15 +52,7 @@ const reviewedFixturePolicy: ReviewedFixtureFieldPolicy = {
       displayName: { type: "string", maxLength: 64 },
       genres: { type: "string-list", maxItems: 5, maxLength: 32 },
     },
-    "approved-outline/row-a": {
-      action: { type: "string", maxLength: 32 },
-      expectedOutcome: { type: "string", maxLength: 32 },
-      genres: { type: "string-list", maxItems: 5, maxLength: 32 },
-    },
-    "approved-outline/row-b": {
-      action: { type: "string", maxLength: 32 },
-      expectedOutcome: { type: "string", maxLength: 32 },
-    },
+    ...createOutlineFixtureFields(),
   },
 };
 

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
 import test from "node:test";
 import {
   guardLoginRequests,
@@ -7,6 +6,7 @@ import {
   withFreshLoginPage,
 } from "../src/execution/runtime-login-browser";
 import { createAuthenticationOnlyPolicy } from "../src/customer-login/authentication-only";
+import { withLoopbackServer } from "./fixtures/loopback-server";
 
 async function fixture(
   run: (url: string, hits: string[]) => Promise<void>,
@@ -14,31 +14,25 @@ async function fixture(
   meStatus = status,
 ) {
   const hits: string[] = [];
-  const server = createServer((req, res) => {
-    hits.push(`${req.method} ${req.url}`);
-    if (req.url === "/") {
-      res.setHeader("Content-Type", "text/html");
-      res.end(
-        '<div id="overlay"><input id="password" autocomplete="current-password"><div id="authUp" hidden></div><button id="authGo">Sign in</button></div><div id="onboard" hidden></div>',
-      );
-    } else {
-      const responseStatus = req.url === "/me" ? meStatus : status;
-      res.writeHead(
-        responseStatus,
-        responseStatus === 302 ? { Location: "/forbidden" } : {},
-      );
-      res.end('{"private":"SYNTHETIC_RESPONSE_CANARY"}');
-    }
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  assert.ok(address && typeof address !== "string");
-  try {
-    await run(`http://127.0.0.1:${address.port}/`, hits);
-  } finally {
-    server.closeAllConnections();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  }
+  await withLoopbackServer(
+    (req, res) => {
+      hits.push(`${req.method} ${req.url}`);
+      if (req.url === "/") {
+        res.setHeader("Content-Type", "text/html");
+        res.end(
+          '<div id="overlay"><input id="password" autocomplete="current-password"><div id="authUp" hidden></div><button id="authGo">Sign in</button></div><div id="onboard" hidden></div>',
+        );
+      } else {
+        const responseStatus = req.url === "/me" ? meStatus : status;
+        res.writeHead(
+          responseStatus,
+          responseStatus === 302 ? { Location: "/forbidden" } : {},
+        );
+        res.end('{"private":"SYNTHETIC_RESPONSE_CANARY"}');
+      }
+    },
+    (url) => run(url, hits),
+  );
 }
 
 test("Given an explicit authentication policy, only one login POST then one me GET reach the destination", async () => {

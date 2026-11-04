@@ -93,13 +93,8 @@ export interface ExecutionSummary {
   readonly attempts: readonly ExecutionAttemptSummary[];
 }
 
-export interface ExecutionAttemptSummary {
+export interface ExecutionAttemptSummary extends SingleExecutionSummary {
   readonly attemptNumber: number;
-  readonly diagnosticReference: string;
-  readonly status: ExecutionStatus;
-  readonly resourceCleanup: ExecutionSummary["resourceCleanup"];
-  readonly dataRestoration: ExecutionSummary["dataRestoration"];
-  readonly scenarios: readonly ScenarioExecutionResult[];
 }
 
 export interface ExecutionOptions {
@@ -699,20 +694,9 @@ async function executeScenario(
   const terminationCompleted = new Promise<boolean>((resolve) => {
     resolveTermination = resolve;
   });
-  let stopReason:
-    | "scenario-timeout"
-    | "run-timeout"
-    | "cancelled"
-    | "cleanup-unknown"
-    | undefined;
+  let stopReason: WorkerStopReason | undefined;
   let termination: Promise<boolean> | undefined;
-  const requestStop = (
-    reason:
-      | "scenario-timeout"
-      | "run-timeout"
-      | "cancelled"
-      | "cleanup-unknown",
-  ): void => {
+  const requestStop = (reason: WorkerStopReason): void => {
     if (stopReason || child.exitCode !== null || child.signalCode !== null) {
       return;
     }
@@ -752,9 +736,14 @@ async function executeScenario(
   ]);
   clearTimeout(timeout);
   runSignal.removeEventListener("abort", onRunAbort);
-  if ("terminated" in outcome) {
-    const workerStopped =
-      outcome.terminated && (await waitForChildExit(child, 500));
+  if ("terminated" in outcome || stopReason) {
+    const terminated =
+      "terminated" in outcome
+        ? outcome.terminated
+        : termination
+          ? await termination
+          : true;
+    const workerStopped = terminated && (await waitForChildExit(child, 500));
     return {
       scenarioId,
       status: stoppedStatus(stopReason ?? "cleanup-unknown", workerStopped),
@@ -770,24 +759,6 @@ async function executeScenario(
     };
   }
   const completion = outcome.completion;
-  const terminated = termination ? await termination : true;
-
-  if (stopReason) {
-    const workerStopped = terminated && (await waitForChildExit(child, 500));
-    return {
-      scenarioId,
-      status: stoppedStatus(stopReason, workerStopped),
-      cleanupStatus: "unknown",
-      cleanupFailures: [
-        workerStopped
-          ? "owned-process-terminated"
-          : "owned-process-state-unknown",
-      ],
-      cleanupFaultInjected: false,
-      workerStopped,
-      workerStallInjected: testCleanupFailure === "worker-stall",
-    };
-  }
   if (completion.spawnFailed) {
     return {
       scenarioId,

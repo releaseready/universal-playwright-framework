@@ -39,14 +39,12 @@ const fixtureValueSchema = z
     value: fixtureValueContentSchema,
   })
   .strict();
+const fixtureFieldNameSchema = z
+  .string()
+  .max(64)
+  .regex(/^[A-Za-z][A-Za-z0-9_]*$/);
 const fixtureValuesSchema = z
-  .record(
-    z
-      .string()
-      .max(64)
-      .regex(/^[A-Za-z][A-Za-z0-9_]*$/),
-    fixtureValueSchema,
-  )
+  .record(fixtureFieldNameSchema, fixtureValueSchema)
   .superRefine((values, context) => {
     const entries = Object.entries(values);
     if (entries.length > 32) {
@@ -56,10 +54,7 @@ const fixtureValuesSchema = z
       });
     }
   });
-const fixtureFieldNameSchema = z
-  .string()
-  .max(64)
-  .regex(/^[A-Za-z][A-Za-z0-9_]*$/);
+type FixtureValues = z.infer<typeof fixtureValuesSchema>;
 const fixtureFieldSchema = z.discriminatedUnion("type", [
   z
     .object({
@@ -354,13 +349,7 @@ function parseOrigin(value: string): URL | undefined {
 }
 
 function copyValues(
-  values: Record<
-    string,
-    {
-      classification: "non-sensitive" | "secret";
-      value: string | number | boolean | string[];
-    }
-  >,
+  values: FixtureValues,
 ): Readonly<Record<string, string | number | boolean | readonly string[]>> {
   return Object.fromEntries(
     Object.entries(values).map(([field, fixtureValue]) => [
@@ -395,13 +384,7 @@ function fixtureValueMatches(
 }
 
 function fixtureFieldsMatchPolicy(
-  values: Record<
-    string,
-    {
-      classification: "non-sensitive" | "secret";
-      value: string | number | boolean | string[];
-    }
-  >,
+  values: FixtureValues,
   policy: ReviewedFixtureFieldPolicy,
   scenarioId: string,
 ): boolean {
