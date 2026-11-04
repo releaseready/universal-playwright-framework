@@ -17,7 +17,7 @@ export const REVIEWED_SOURCE_REVISION = "rrdweb4-synthetic-source-1";
 export const REVIEWED_FEATURE_REVISION =
   "c916c0e7ad8efab755c669578827870c5fdfb48e53536362715d7dfdfcc31268";
 export const REVIEWED_IMPLEMENTATION_REVISION =
-  "797e132aaa16063d1c14f28be40bb71db700f75b484bbf28006e77f281b359cb";
+  "315206d9f6aa9077f205b9aa97489d8d287700982b1a8f3713b1b003d9590048";
 
 const stepManifest: ReviewedStepManifest = {
   implementationRevision: REVIEWED_IMPLEMENTATION_REVISION,

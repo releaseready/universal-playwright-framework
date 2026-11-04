@@ -85,6 +85,20 @@ function pilotPage(world: LocalPilotWorld) {
   return world.page;
 }
 
+async function fillTargetRecipe(world: LocalPilotWorld): Promise<void> {
+  const page = pilotPage(world);
+  const recipe = world.targetRecipe;
+  if (!recipe) {
+    throw new Error("Owned synthetic target recipe is unavailable");
+  }
+  await page
+    .getByRole("textbox", { name: "Target account" })
+    .fill(recipe.account);
+  await page
+    .getByRole("textbox", { name: "Target password" })
+    .fill(recipe.password);
+}
+
 async function openPilotPage(world: LocalPilotWorld): Promise<void> {
   const page = await world.browser.newPage();
   world.page = page;
@@ -113,17 +127,7 @@ Given(
 Given(
   "the target login uses an exact approved synthetic recipe",
   async function (this: LocalPilotWorld) {
-    const page = pilotPage(this);
-    const recipe = this.targetRecipe;
-    if (!recipe) {
-      throw new Error("Owned synthetic target recipe is unavailable");
-    }
-    await page
-      .getByRole("textbox", { name: "Target account" })
-      .fill(recipe.account);
-    await page
-      .getByRole("textbox", { name: "Target password" })
-      .fill(recipe.password);
+    await fillTargetRecipe(this);
   },
 );
 
@@ -154,18 +158,10 @@ Given(
 When(
   "I submit the synthetic target login once",
   async function (this: LocalPilotWorld) {
-    const page = pilotPage(this);
-    const recipe = this.targetRecipe;
-    if (!recipe) {
-      throw new Error("Owned synthetic target recipe is unavailable");
-    }
-    await page
-      .getByRole("textbox", { name: "Target account" })
-      .fill(recipe.account);
-    await page
-      .getByRole("textbox", { name: "Target password" })
-      .fill(recipe.password);
-    await page.getByRole("button", { name: "Sign in to target" }).click();
+    await fillTargetRecipe(this);
+    await pilotPage(this)
+      .getByRole("button", { name: "Sign in to target" })
+      .click();
   },
 );
 

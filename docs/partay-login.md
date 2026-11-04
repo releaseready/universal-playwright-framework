@@ -30,6 +30,10 @@ Shared resource lifetime is in
 [runtime-login-browser.ts](../src/execution/runtime-login-browser.ts).
 Do not use the example authentication setup: it saves storage state.
 
+The inspection and verification operator scripts share signal registration,
+safe failure reporting, and listener cleanup through `scripts/login-command.ts`.
+This does not change either command's authorization or input requirements.
+
 ## Runtime integration
 
 ```typescript

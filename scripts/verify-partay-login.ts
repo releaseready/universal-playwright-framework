@@ -5,10 +5,8 @@ import {
   type RuntimeLoginRequest,
 } from "../src/input-preparation/runtime-login";
 import { PRIVATE_FILE_LOGIN_DEFERRED_MESSAGE } from "../src/input-preparation/private-login-file";
-import {
-  partayLoginFailureReport,
-  promptAndVerifyPartayLogin,
-} from "../src/customer-login/partay";
+import { promptAndVerifyPartayLogin } from "../src/customer-login/partay";
+import { runLoginCommand } from "./login-command";
 
 const HELP = [
   "Usage: npm run verify:partay-login -- <approved-descriptor.json> <approved-request.json>",
@@ -19,11 +17,7 @@ const HELP = [
 ].join("\n");
 
 async function main(): Promise<void> {
-  const controller = new AbortController();
-  const cancel = (): void => controller.abort();
-  process.once("SIGINT", cancel);
-  process.once("SIGTERM", cancel);
-  try {
+  await runLoginCommand(async (signal) => {
     let descriptor: PreparedInputDescriptor;
     let request: RuntimeLoginRequest;
     try {
@@ -62,7 +56,7 @@ async function main(): Promise<void> {
       );
     }
     const receipt = await promptAndVerifyPartayLogin(descriptor, request, {
-      signal: controller.signal,
+      signal,
     });
     process.stdout.write(
       `${JSON.stringify({
@@ -76,15 +70,7 @@ async function main(): Promise<void> {
         },
       })}\n`,
     );
-  } catch (error) {
-    process.stderr.write(
-      `${JSON.stringify(partayLoginFailureReport(error))}\n`,
-    );
-    process.exitCode = 1;
-  } finally {
-    process.removeListener("SIGINT", cancel);
-    process.removeListener("SIGTERM", cancel);
-  }
+  });
 }
 
 void main();

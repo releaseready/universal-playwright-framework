@@ -22,19 +22,11 @@ import {
   selectApprovedScenarios,
   type ScenarioApproval,
 } from "../src/validation/scenario-selector";
+import { createValidationManifest } from "../fixtures/input-preparation/reviewed-fixtures";
 
 const repositoryRoot = path.resolve(__dirname, "../../..");
 const fixturePath = "fixtures/validation/reviewed-scenarios.feature";
-const manifest: ReviewedStepManifest = {
-  implementationRevision: "steps-revision-a",
-  steps: [
-    { id: "common-setup", expression: "common setup is ready" },
-    { id: "rule-setup", expression: "rule setup is ready" },
-    { id: "open-demo", expression: "the demo page is open" },
-    { id: "activate", expression: "I activate {word}" },
-    { id: "outcome", expression: "outcome is {word}" },
-  ],
-};
+const manifest = createValidationManifest("steps-revision-a");
 
 function createWorkspace(): string {
   return mkdtempSync(path.join(tmpdir(), "feature-validation-"));

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
 import test from "node:test";
 import { chromium, type Page } from "@playwright/test";
 import { RuntimeLoginFailure } from "../src/input-preparation/runtime-login";
@@ -12,35 +11,30 @@ import {
   observeLoginControls,
   inspectPartayLogin,
 } from "../src/customer-login/inspection";
+import { withLoopbackServer } from "./fixtures/loopback-server";
 
 async function fixture(
   run: (url: string, hits: string[]) => Promise<void>,
   redirect = 0,
 ): Promise<void> {
   const hits: string[] = [];
-  const server = createServer((request, response) => {
-    hits.push(`${request.method} ${request.url}`);
-    if (request.url === "/") {
-      response.setHeader("Content-Type", "text/html");
-      response.end(
-        '<div id="brandLogo">Partay</div><form id="overlay"><input id="username"><input id="password" type="password"><button class="pw-eye" type="button" aria-label="Show password">Eye</button><button id="authGo">Sign in</button></form>',
-      );
-    } else if (redirect) {
-      response.writeHead(redirect, { Location: "/forbidden" });
-      response.end();
-    } else {
-      response.end("{}");
-    }
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  assert.ok(address && typeof address !== "string");
-  try {
-    await run(`http://127.0.0.1:${address.port}/`, hits);
-  } finally {
-    server.closeAllConnections();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  }
+  await withLoopbackServer(
+    (request, response) => {
+      hits.push(`${request.method} ${request.url}`);
+      if (request.url === "/") {
+        response.setHeader("Content-Type", "text/html");
+        response.end(
+          '<div id="brandLogo">Partay</div><form id="overlay"><input id="username"><input id="password" type="password"><button class="pw-eye" type="button" aria-label="Show password">Eye</button><button id="authGo">Sign in</button></form>',
+        );
+      } else if (redirect) {
+        response.writeHead(redirect, { Location: "/forbidden" });
+        response.end();
+      } else {
+        response.end("{}");
+      }
+    },
+    (url) => run(url, hits),
+  );
 }
 
 test("Given an owned page, only the exact GET fetch paths reach the server", async () => {
