@@ -35,6 +35,10 @@ const targetSchema = z
     origin: z
       .string()
       .max(100)
+      .regex(/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/)
+      .describe(
+        "Canonical owned loopback HTTP origin with an explicit non-default port in 1..65535; URL canonicalization is also validated at runtime.",
+      )
       .refine((value) => {
         try {
           const url = new URL(value);
@@ -329,6 +333,15 @@ const acceptedSchema = z
       .strict(),
   })
   .strict();
+/** Canonical transport shapes; validateOwnedLocalEvidence also enforces coherence. */
+export const ownedLocalRequestJsonSchema = z.toJSONSchema(requestSchema, {
+  unrepresentable: "any",
+});
+export const ownedLocalResultJsonSchema = z.toJSONSchema(
+  z.union([acceptedSchema, rejectedSchema]),
+  { unrepresentable: "any" },
+);
+
 export type OwnedLocalResult =
   | z.infer<typeof acceptedSchema>
   | z.infer<typeof rejectedSchema>;

@@ -495,3 +495,30 @@ test("Given the worker supplies no business-step evidence, an operational failur
     engineFailure.mock.restore();
   }
 });
+
+test("Given the public v2 export, HTTP schemas retain strict bounded request and outcome shapes", () => {
+  const schemas: Record<
+    string,
+    Record<string, unknown>
+  > = require("../src/adapter/v2");
+  const requestSchema = schemas.ownedLocalRequestJsonSchema;
+  const resultSchema = schemas.ownedLocalResultJsonSchema;
+  assert.ok(requestSchema);
+  assert.ok(resultSchema);
+  assert.equal(requestSchema.additionalProperties, false);
+  const properties = requestSchema.properties as Record<
+    string,
+    Record<string, unknown>
+  >;
+  assert.equal(properties.version.const, 2);
+  const target = properties.target.properties as Record<
+    string,
+    Record<string, unknown>
+  >;
+  assert.equal(target.origin.type, "string");
+  assert.equal(typeof target.origin.pattern, "string");
+  const variants = resultSchema.anyOf as Record<string, unknown>[];
+  assert.equal(variants.length, 2);
+  for (const variant of variants)
+    assert.equal(variant.additionalProperties, false);
+});
