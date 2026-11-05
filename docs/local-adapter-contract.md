@@ -306,3 +306,57 @@ red/green evidence is `/tmp/web17-matcher-red.log` and
 The tested consumer tarball digest is
 `34895e0199306520d3b05dfe3cd0bf1f322a4d6803b3400c46fbfff1b6af4fff`.
 This evidence paragraph is a subsequent documentation-only addition.
+
+## Owned local target v2 (RRDSCRUM-139)
+
+The separate `@universal/playwright-framework/adapter/v2` export adds
+`executeOwnedLocalAdapter`, `getOwnedLocalReview` and
+`validateOwnedLocalEvidence`. V1 remains fixed-fixture-only and rejects the new
+`local-demo-navigation` scenario. V2 reuses the reviewed execution engine, worker,
+input preparation and cleanup; it never starts a substitute fixture server.
+
+Trusted central composition owns the target process, its separate stores and
+health checks, explicit approval and durable run admission. It provides an exact
+`OwnedLocalRequest` and a separate `OwnedLocalContext` with the same request,
+active approval and expiry. The request binds tenant, project, environment,
+case revision and source hash, data/configuration/implementation hashes, approval,
+run and attempt 1 to one target identity and canonical
+`http://127.0.0.1:<port>` origin. Other hosts, schemes, paths, credentials, extra
+fields, retries and concurrent scenarios are rejected before acquisition.
+
+The fourth argument is a required trusted `beforeBrowserAcquire` async callback.
+Central must recheck its authoritative approval and owned target at that boundary;
+missing or rejected authorization fails closed. The engine checks cancellation
+and expiry again after that callback, immediately before launching its owned
+browser. The callback is never serialized or accepted from an HTTP request.
+Central must atomically consume the run before calling: the stateless SDK does
+not replace central durable idempotency or authorize repeated execution.
+
+The sole fixed journey opens the actual target, selects **Explore the demo** and
+**Explore demo**, checks the synthetic workspace/project, then returns to sign-in.
+It uses no credential values, protected-input provider or arbitrary uploaded
+executable. This is navigation evidence only, not signup or customer acceptance.
+HTTP redirects, foreign origins, WebSockets, WebRTC, WebTransport and service
+workers are blocked. Host preview is not Docker no-egress isolation.
+
+Trusted context may explicitly select the installed `/usr/bin/chromium` for host
+verification. Otherwise the package uses its Playwright browser. This is not an
+HTTP executable-path parameter or a download fallback.
+
+Results retain exact request references, actual report/outcome, attempt and
+browser/worker cleanup. `validateOwnedLocalEvidence(request, result)` is a strict,
+read-only historical validator: it does not launch, reauthorize, replay or require
+the current installed implementation. It rejects unknown fields and contradictory
+successful outcomes, step order, counts, attempts or cleanup. Central must enforce
+stored tenant/project access before returning evidence. Raw logs, traces and
+screenshots remain withheld. Data restoration remains unknown and is never
+inferred from browser shutdown. Only the central target owner may stop its target;
+the adapter stops only browser/worker resources it acquired.
+
+Run `npm run test:owned-local` for the public contract and owned synthetic browser
+checks with pinned Playwright by default. For an explicit host diagnostic only,
+`RR139_SYSTEM_CHROMIUM=1 npm run test:owned-local` selects `/usr/bin/chromium`;
+its presence alone never changes the default, and arbitrary executable paths are
+not accepted. System-browser diagnostics do not prove pinned-browser compatibility.
+Actual ReleaseReady controller/target/restart acceptance belongs to the central
+repository.

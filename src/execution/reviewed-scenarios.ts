@@ -15,13 +15,27 @@ export const INPUT_FIXTURE_PATH = "fixtures/execution/approved-inputs.json";
 
 export const REVIEWED_SOURCE_REVISION = "rrdweb4-synthetic-source-1";
 export const REVIEWED_FEATURE_REVISION =
-  "c916c0e7ad8efab755c669578827870c5fdfb48e53536362715d7dfdfcc31268";
+  "3067cf359002bc03e262c3ef61824fe48caebf268cea48758e7d4ffee32b205f";
 export const REVIEWED_IMPLEMENTATION_REVISION =
-  "315206d9f6aa9077f205b9aa97489d8d287700982b1a8f3713b1b003d9590048";
+  "394cddf2c50a6cad52d9ba49c1f98397b719ac113c70156a50c40e4641fec2ba";
 
 const stepManifest: ReviewedStepManifest = {
   implementationRevision: REVIEWED_IMPLEMENTATION_REVISION,
   steps: [
+    { id: "explore-owned-demo", expression: "I explore the owned local demo" },
+    {
+      id: "confirm-owned-demo",
+      expression:
+        "the owned local demo shows its synthetic workspace and project",
+    },
+    {
+      id: "leave-owned-demo",
+      expression: "I return from the owned local demo to sign in",
+    },
+    {
+      id: "confirm-owned-signin",
+      expression: "the owned local sign in page is visible",
+    },
     {
       id: "open-synthetic-page",
       expression: "the synthetic reviewed page is open",
@@ -70,6 +84,7 @@ const reviewedApproval: ScenarioApproval = {
   implementationRevision: REVIEWED_IMPLEMENTATION_REVISION,
   scenarios: [
     approveScenario("browser-flow", "S01"),
+    approveScenario("local-demo-navigation", "S04"),
     approveScenario("retry-assertion-flow", "S03"),
     approveScenario("assertion-failure", "S02"),
     approveScenario("pending-flow", "S02"),
@@ -85,6 +100,7 @@ export const reviewedFixturePolicy: ReviewedFixtureFieldPolicy = {
   revision: "synthetic-field-policy-1",
   sharedFields: {},
   scenarioFields: {
+    "local-demo-navigation": { displayName: { type: "string", maxLength: 64 } },
     "browser-flow": { displayName: { type: "string", maxLength: 64 } },
     "retry-assertion-flow": { displayName: { type: "string", maxLength: 64 } },
     "assertion-failure": { displayName: { type: "string", maxLength: 64 } },
@@ -137,6 +153,8 @@ export function calculateReviewedImplementationRevision(): string {
     "tsconfig.cucumber.json",
     "package.json",
     "src/adapter/v1.ts",
+    "src/adapter/v2.ts",
+    "dist/cucumber/src/adapter/v2.js",
     "dist/cucumber/src/adapter/v1.js",
     "src/execution/index.ts",
     "src/reporting/index.ts",

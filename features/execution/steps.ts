@@ -102,3 +102,52 @@ Then("the unapproved navigation was blocked", function (this: ExecutionWorld) {
   assert.deepEqual(this.blockedDestinations, [this.payload?.redirectTargetUrl]);
   assert.equal(this.page?.url(), this.payload?.environment.initialTargetUrl);
 });
+
+When("I explore the owned local demo", async function (this: ExecutionWorld) {
+  if (!this.page) throw new Error("Owned browser page is unavailable");
+  await this.page
+    .getByRole("button", { name: "Explore the demo", exact: true })
+    .click();
+  await this.page
+    .getByRole("button", { name: "Explore demo", exact: true })
+    .click();
+});
+Then(
+  "the owned local demo shows its synthetic workspace and project",
+  async function (this: ExecutionWorld) {
+    if (!this.page) throw new Error("Owned browser page is unavailable");
+    await expect(
+      this.page.getByRole("heading", {
+        name: "Anonymous demo workspace",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      this.page.getByRole("heading", {
+        name: "Synthetic demo project",
+        exact: true,
+      }),
+    ).toBeVisible();
+  },
+);
+When(
+  "I return from the owned local demo to sign in",
+  async function (this: ExecutionWorld) {
+    if (!this.page) throw new Error("Owned browser page is unavailable");
+    await this.page
+      .getByRole("button", { name: "Back to sign in", exact: true })
+      .click();
+  },
+);
+Then(
+  "the owned local sign in page is visible",
+  async function (this: ExecutionWorld) {
+    if (!this.page) throw new Error("Owned browser page is unavailable");
+    await expect(
+      this.page.getByRole("heading", {
+        name: "Sign in to ReleaseReady",
+        exact: true,
+      }),
+    ).toBeVisible();
+  },
+);
