@@ -425,76 +425,120 @@ test("Given cancellation during a target navigation, only the acquired browser s
   }
 });
 
-test("Given the worker supplies no business-step evidence, an operational failure stays incomplete with its original cleanup", async () => {
-  const engine: typeof import("../src/execution") = require("../src/execution");
-  const diagnosticReference = "00000000-0000-4000-8000-000000000000";
-  const resourceCleanup = {
-    status: "unknown" as const,
-    failures: ["worker-start"],
-    browserProcessStopped: null,
-    blockedTargetRequestCount: 0,
-    injectedPendingCleanup: false,
-  };
-  const dataRestoration = {
-    status: "unknown" as const,
-    operationPerformed: false as const,
-  };
-  const scenarios = [
-    {
-      scenarioId: "local-demo-navigation",
-      status: "incomplete" as const,
-      cleanupStatus: "unknown" as const,
-      cleanupFailures: ["worker-start"],
-      cleanupFaultInjected: false,
-      workerStopped: true,
-      workerStallInjected: false,
-    },
-  ];
-  const engineFailure = mock.method(
-    engine,
-    "executeReviewedScenarios",
-    async () => ({
-      diagnosticReference,
-      status: "failed" as const,
-      resourceCleanup,
-      dataRestoration,
-      scenarios,
-      attemptCount: 1,
-      attempts: [
+for (const hasBusinessEvidence of [false, true]) {
+  test(
+    hasBusinessEvidence
+      ? "Given business steps pass but cleanup fails, the scenario stays incomplete with its actual step evidence"
+      : "Given the worker supplies no business-step evidence, an operational failure stays incomplete with its original cleanup",
+    async () => {
+      const failure = hasBusinessEvidence ? "context-close" : "worker-start";
+      const engine: typeof import("../src/execution") = require("../src/execution");
+      const diagnosticReference = "00000000-0000-4000-8000-000000000000";
+      const resourceCleanup = {
+        status: "unknown" as const,
+        failures: [failure],
+        browserProcessStopped: null,
+        blockedTargetRequestCount: 0,
+        injectedPendingCleanup: false,
+      };
+      const dataRestoration = {
+        status: "unknown" as const,
+        operationPerformed: false as const,
+      };
+      const scenarios = [
         {
-          attemptNumber: 1,
+          scenarioId: "local-demo-navigation",
+          status: "failed" as const,
+          ...(hasBusinessEvidence
+            ? {
+                cucumber: {
+                  featureName: "Execute reviewed synthetic scenarios",
+                  scenarioName:
+                    "A visitor explores the owned local demo and returns to sign in",
+                  steps: [
+                    "the synthetic reviewed page is open",
+                    "I explore the owned local demo",
+                    "the owned local demo shows its synthetic workspace and project",
+                    "I return from the owned local demo to sign in",
+                    "the owned local sign in page is visible",
+                  ].map((name) => ({ name, status: "passed" as const })),
+                },
+              }
+            : {}),
+          cleanupStatus: "unknown" as const,
+          cleanupFailures: [failure],
+          cleanupFaultInjected: false,
+          workerStopped: true,
+          workerStallInjected: false,
+        },
+      ];
+      const engineFailure = mock.method(
+        engine,
+        "executeReviewedScenarios",
+        async () => ({
           diagnosticReference,
           status: "failed" as const,
           resourceCleanup,
           dataRestoration,
           scenarios,
-        },
-      ],
-    }),
+          attemptCount: 1,
+          attempts: [
+            {
+              attemptNumber: 1,
+              diagnosticReference,
+              status: "failed" as const,
+              resourceCleanup,
+              dataRestoration,
+              scenarios,
+            },
+          ],
+        }),
+      );
+      try {
+        const request = await requestFor();
+        const result = await executeOwnedLocalAdapter(
+          request,
+          owner(request),
+          undefined,
+          async () => {},
+        );
+        assert.equal(result.accepted, true);
+        if (!result.accepted) throw new Error("Expected preserved outcome");
+        assert.equal(result.report.status, "incomplete");
+        assert.equal(result.report.attempts[0].status, "incomplete");
+        assert.equal(result.report.scenarios[0].status, "incomplete");
+        assert.equal(
+          result.report.scenarios[0].evidenceStatus,
+          hasBusinessEvidence ? "available" : "unavailable",
+        );
+        assert.deepEqual(
+          result.report.scenarios[0].steps,
+          scenarios[0].cucumber?.steps ?? [],
+        );
+        assert.equal(
+          result.report.attempts[0].scenarios[0].status,
+          "incomplete",
+        );
+        assert.equal(result.report.totals.scenarioOutcomes.failed, 0);
+        assert.equal(result.report.totals.scenarioOutcomes.incomplete, 1);
+        const forged = structuredClone(result);
+        forged.report.scenarios[0].status = "failed";
+        forged.report.attempts[0].scenarios[0].status = "failed";
+        forged.report.totals.scenarioOutcomes.incomplete = 0;
+        forged.report.totals.scenarioOutcomes.failed = 1;
+        assert.equal(validateOwnedLocalEvidence(request, forged), false);
+        assert.deepEqual(result.lifecycle.resourceCleanup.failures, [failure]);
+        assert.equal(
+          result.lifecycle.resourceCleanup.browserProcessStopped,
+          null,
+        );
+        assert.equal(validateOwnedLocalEvidence(request, result), true);
+      } finally {
+        engineFailure.mock.restore();
+      }
+    },
   );
-  try {
-    const request = await requestFor();
-    const result = await executeOwnedLocalAdapter(
-      request,
-      owner(request),
-      undefined,
-      async () => {},
-    );
-    assert.equal(result.accepted, true);
-    if (!result.accepted) throw new Error("Expected preserved outcome");
-    assert.equal(result.report.status, "incomplete");
-    assert.equal(result.report.attempts[0].status, "incomplete");
-    assert.equal(result.report.scenarios[0].status, "incomplete");
-    assert.equal(result.report.scenarios[0].evidenceStatus, "unavailable");
-    assert.deepEqual(result.lifecycle.resourceCleanup.failures, [
-      "worker-start",
-    ]);
-    assert.equal(result.lifecycle.resourceCleanup.browserProcessStopped, null);
-    assert.equal(validateOwnedLocalEvidence(request, result), true);
-  } finally {
-    engineFailure.mock.restore();
-  }
-});
+}
 
 test("Given the public v2 export, HTTP schemas retain strict bounded request and outcome shapes", () => {
   const schemas: Record<

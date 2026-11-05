@@ -461,6 +461,13 @@ export function validateOwnedLocalEvidence(
       scenario.scenarioId !== owned.scenarioId
     )
       return false;
+    if (
+      scenario.status === "failed" &&
+      (scenario.executionState !== "executed" ||
+        scenario.evidenceStatus !== "available" ||
+        !scenario.steps.some((step) => step.status === "failed"))
+    )
+      return false;
     if (scenario.evidenceStatus === "available") {
       if (
         !scenario.featureName ||
@@ -585,23 +592,35 @@ export async function executeOwnedLocalAdapter(
     };
   }
   if (authorizationDenied) return reject("INVALID_CONTEXT");
-  // Operational failure without a failed business step cannot establish a
-  // business failure. Preserve the underlying scenarios and cleanup verbatim.
-  if (
-    summary.status === "failed" &&
-    !summary.scenarios.some((scenario) =>
-      scenario.cucumber?.steps.some((step) => step.status === "failed"),
-    )
-  ) {
-    summary = {
-      ...summary,
-      status: "incomplete",
-      attempts: summary.attempts.map((attempt) => ({
+  // A failure without a failed business step is operationally incomplete at
+  // every reporting level. Retain actual step evidence and cleanup unchanged.
+  const classifyScenario = (scenario: ExecutionSummary["scenarios"][number]) =>
+    scenario.status === "failed" &&
+    !scenario.cucumber?.steps.some((step) => step.status === "failed")
+      ? { ...scenario, status: "incomplete" as const }
+      : scenario;
+  const scenarios = summary.scenarios.map(classifyScenario);
+  summary = {
+    ...summary,
+    status:
+      summary.status === "failed" &&
+      !scenarios.some((scenario) => scenario.status === "failed")
+        ? "incomplete"
+        : summary.status,
+    scenarios,
+    attempts: summary.attempts.map((attempt) => {
+      const attemptScenarios = attempt.scenarios.map(classifyScenario);
+      return {
         ...attempt,
-        status: "incomplete",
-      })),
-    };
-  }
+        status:
+          attempt.status === "failed" &&
+          !attemptScenarios.some((scenario) => scenario.status === "failed")
+            ? "incomplete"
+            : attempt.status,
+        scenarios: attemptScenarios,
+      };
+    }),
+  };
   const result = {
     version: 2 as const,
     accepted: true as const,
