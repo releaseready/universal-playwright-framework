@@ -2,9 +2,6 @@ import assert from "node:assert/strict";
 import { inspect } from "node:util";
 import { PassThrough } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { test } from "node:test";
 import { chromium } from "@playwright/test";
 import type {
@@ -17,7 +14,6 @@ import {
   InMemoryRuntimeSecretProvider,
   RuntimeLoginError,
   validateRuntimeLoginRequest,
-  type RuntimeLoginAccount,
   type RuntimeLoginRequest,
 } from "../src/input-preparation/runtime-login";
 import { withOperatorLoginInputs } from "../src/input-preparation/operator-prompt";
@@ -475,189 +471,15 @@ test("runtime login errors never log canaries or mutate the ordinary worker payl
   assertNoCanaries(inspect(logged));
 });
 
-test("mid-prompt cancellation, expiry, blank and control input restore non-echoing terminal state", async () => {
-  for (const outcome of [
-    "cancel",
-    "expire",
-    "blank",
-    "interrupt",
-    "oversize",
-    "paste",
-  ] as const) {
-    const { request, descriptor } = fixture();
-    const input = new TerminalInput();
-    input.pause();
-    const output = new TerminalOutput(input, []);
-    const controller = new AbortController();
-    const pending = withOperatorLoginInputs(
-      descriptor,
-      outcome === "expire"
-        ? { ...request, expiresAt: Date.now() + 50 }
-        : request,
-      async () => {
-        assert.fail("Invalid prompt must not reach browser consumer");
-      },
-      { input, output, signal: controller.signal },
-    );
-    if (outcome === "cancel") controller.abort();
-    if (outcome === "blank") input.write("\r");
-    if (outcome === "interrupt") input.write("\u0003");
-    if (outcome === "oversize") input.write("a".repeat(1025));
-    if (outcome === "paste")
-      input.write(`${canary.username}\n${canary.password}\n`);
-    await assert.rejects(pending, (error: unknown) => {
-      assert.ok(error instanceof RuntimeLoginError);
-      assertNoCanaries(inspect(error));
-      return true;
-    });
-    assert.equal(input.isRaw, false);
-    assert.equal(input.isPaused(), true);
-    assert.equal(input.listenerCount("data"), 0);
-    assert.equal(input.listenerCount("error"), 0);
-    assert.equal(output.listenerCount("error"), 0);
-    assertNoCanaries(output.transcript);
-    input.destroy();
-    output.destroy();
-  }
-});
-
-test("a terminal cannot be shared between concurrent runs and stale review blocks prompting", async () => {
-  const { request, descriptor } = fixture();
-  const input = new TerminalInput();
-  input.pause();
-  const output = new TerminalOutput(input, []);
-  const controller = new AbortController();
-  const first = withOperatorLoginInputs(descriptor, request, async () => {}, {
-    input,
-    output,
-    signal: controller.signal,
-  });
-  const firstRejection = assert.rejects(first, RuntimeLoginError);
-  await assert.rejects(
-    withOperatorLoginInputs(descriptor, request, async () => {}, {
-      input,
-      output,
-    }),
-    { code: "runtime-input-unavailable" },
-  );
-  controller.abort();
-  await firstRejection;
-  const before = output.transcript;
-  await assert.rejects(
-    withOperatorLoginInputs(
-      descriptor,
-      { ...request, account: { ...request.account, revision: "stale" } },
-      async () => {
-        assert.fail("Stale review must not consume account");
-      },
-      { input, output },
-    ),
-    { code: "runtime-scope-mismatch" },
-  );
-  assert.equal(output.transcript, before);
-  input.destroy();
-  output.destroy();
-});
-
-test("hidden operator prompt delivers canaries without putting them in ordinary serialized surfaces", async () => {
-  const { request, descriptor } = fixture();
-  const input = new TerminalInput();
-  input.pause();
-  const output = new TerminalOutput(input);
-  const beforeArguments = [...process.argv];
-  const beforePayload = process.env.WEB_EXECUTION_PAYLOAD;
-  let consumed = false;
-  let retainedHandle: RuntimeLoginAccount | undefined;
-  const result = await withOperatorLoginInputs(
-    descriptor,
-    request,
-    async (account) => {
-      assert.equal(account.username, canary.username);
-      assert.equal(account.password, canary.password);
-      assertNoCanaries(JSON.stringify(account));
-      assertNoCanaries(inspect(account));
-      retainedHandle = account;
-      consumed = true;
-    },
-    { input, output },
-  );
-  assert.equal(consumed, true);
-  assert.ok(retainedHandle);
-  assert.throws(() => retainedHandle?.password, {
-    code: "runtime-input-unavailable",
-  });
-  assert.equal(result.status, "completed");
-  assert.equal(input.isRaw, false);
-  assert.equal(input.isPaused(), true);
-  assert.deepEqual(input.rawTransitions, [true, false]);
-  assert.equal(input.listenerCount("data"), 0);
-  assertNoCanaries(output.transcript);
-  assertNoCanaries(descriptor);
-  assertNoCanaries(request);
-  assertNoCanaries(result);
-  assert.deepEqual(process.argv, beforeArguments);
-  assert.equal(process.env.WEB_EXECUTION_PAYLOAD, beforePayload);
-  const directory = mkdtempSync(path.join(tmpdir(), "owned-runtime-canary-"));
-  try {
-    const job = path.join(directory, "reference-job.json");
-    const report = path.join(directory, "reference-result.json");
-    writeFileSync(job, JSON.stringify({ request, descriptor }), {
-      mode: 0o600,
-    });
-    writeFileSync(report, JSON.stringify(result), { mode: 0o600 });
-    assertNoCanaries(readFileSync(job, "utf8"));
-    assertNoCanaries(readFileSync(report, "utf8"));
-  } finally {
-    rmSync(directory, { recursive: true });
-    input.destroy();
-    output.destroy();
-  }
-});
-
-test("non-TTY, cancelled prompt and consumer exceptions fail safely and restore the terminal", async () => {
-  for (const fault of ["non-tty", "cancel", "consumer"] as const) {
-    const { request, descriptor } = fixture();
-    const input = new TerminalInput();
-    const output = new TerminalOutput(input);
-    const controller = new AbortController();
-    if (fault === "non-tty") input.isTTY = false;
-    if (fault === "cancel") controller.abort();
-    let consumed = false;
-    await assert.rejects(
-      withOperatorLoginInputs(
-        descriptor,
-        request,
-        async () => {
-          consumed = true;
-          throw new Error(`${canary.username}:${canary.password}`);
-        },
-        { input, output, signal: controller.signal },
-      ),
-      (error: unknown) => {
-        assert.ok(error instanceof RuntimeLoginError);
-        assertNoCanaries(error.message);
-        assertNoCanaries(inspect(error));
-        return true;
-      },
-    );
-    assert.equal(consumed, fault === "consumer");
-    assert.equal(input.isRaw, false);
-    assert.equal(input.listenerCount("data"), 0);
-    assertNoCanaries(output.transcript);
-    input.destroy();
-    output.destroy();
-  }
-});
-
 test("real owned browser consumes runtime credentials with fresh session isolation", async () => {
   const { request, descriptor } = fixture();
-  const input = new TerminalInput();
-  const output = new TerminalOutput(input);
+  const provider = new InMemoryRuntimeSecretProvider(request, canary);
   let browserStarts = 0;
   try {
-    const result = await withOperatorLoginInputs(
+    const result = await consumeRuntimeLoginInputs(
       descriptor,
       request,
+      provider,
       async (account) => {
         browserStarts += 1;
         const browser = await chromium.launch({ headless: true });
@@ -704,13 +526,121 @@ test("real owned browser consumes runtime credentials with fresh session isolati
           await browser.close();
         }
       },
-      { input, output },
     );
     assert.equal(browserStarts, 1);
     assertNoCanaries(result);
-    assertNoCanaries(output.transcript);
+  } finally {
+    provider.dispose();
+  }
+});
+
+test("RRDPLAT-39 inherited-terminal entry is disabled before prompting or consuming", async () => {
+  const { descriptor, request } = fixture();
+  const input = new TerminalInput();
+  const output = new TerminalOutput(input);
+  let consumed = false;
+  try {
+    await assert.rejects(
+      withOperatorLoginInputs(
+        descriptor,
+        request,
+        async () => {
+          consumed = true;
+        },
+        { input, output },
+      ),
+      { code: "runtime-input-unavailable" },
+    );
+    assert.equal(consumed, false);
+    assert.equal(output.transcript, "");
+    assert.deepEqual(input.rawTransitions, []);
+    assert.equal(input.listenerCount("data"), 0);
   } finally {
     input.destroy();
     output.destroy();
   }
 });
+
+for (const environment of [
+  undefined,
+  "development",
+  "test",
+  "uat",
+  "production",
+  "custom",
+]) {
+  test(`RRDPLAT-39 no terminal fallback in ${environment ?? "unset"} environment`, async () => {
+    const previous = process.env.NODE_ENV;
+    if (environment === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = environment;
+    const { request, descriptor } = fixture();
+    const input = new TerminalInput();
+    input.pause();
+    const output = new TerminalOutput(input, []);
+    input.write(canary.username);
+    const queued = input.readableLength;
+    try {
+      for (const state of [
+        "pending",
+        "cancelled",
+        "expired",
+        "interrupt",
+        "late",
+      ] as const) {
+        const controller = new AbortController();
+        if (state === "cancelled") controller.abort();
+        const pending = withOperatorLoginInputs(
+          descriptor,
+          state === "expired" ? { ...request, expiresAt: 1 } : request,
+          async () => {
+            assert.fail(
+              "Blocked entry must never acquire a consumer or browser",
+            );
+          },
+          { input, output, signal: controller.signal },
+        );
+        controller.abort();
+        if (state === "interrupt") input.emit("data", Buffer.from("\u0003"));
+        if (state === "late") input.emit("data", Buffer.from(canary.password));
+        await assert.rejects(pending, { code: "runtime-input-unavailable" });
+        assert.equal(input.readableLength, queued);
+        assert.equal(input.listenerCount("data"), 0);
+        assert.deepEqual(input.rawTransitions, []);
+        assert.equal(input.isRaw, false);
+        assert.equal(input.isPaused(), true);
+        assert.equal(output.transcript, "");
+      }
+      // Even malicious accessors must not activate another input route.
+      const unavailable = new Proxy(
+        {},
+        {
+          get() {
+            assert.fail("Entry inspected input options");
+          },
+        },
+      );
+      await assert.rejects(
+        withOperatorLoginInputs(
+          descriptor,
+          request,
+          async () => {
+            assert.fail("Consumer acquired");
+          },
+          unavailable,
+        ),
+        { code: "runtime-input-unavailable" },
+      );
+      await assert.rejects(
+        withOperatorLoginInputs(descriptor, request, async () => {
+          assert.fail("Default stdin fallback acquired");
+        }),
+        { code: "runtime-input-unavailable" },
+      );
+    } finally {
+      if (previous === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previous;
+      input.destroy();
+      output.destroy();
+    }
+  });
+}
