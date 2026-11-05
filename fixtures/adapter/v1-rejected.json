@@ -5,11 +5,13 @@
     "gitRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
   "target": "https://external.invalid",
-  "scenarioIds": ["browser-flow"],
+  "scenarioIds": [
+    "browser-flow"
+  ],
   "approval": {
     "sourceRevision": "rrdweb4-synthetic-source-1",
-    "featureRevision": "c916c0e7ad8efab755c669578827870c5fdfb48e53536362715d7dfdfcc31268",
-    "implementationRevision": "315206d9f6aa9077f205b9aa97489d8d287700982b1a8f3713b1b003d9590048"
+    "featureRevision": "3067cf359002bc03e262c3ef61824fe48caebf268cea48758e7d4ffee32b205f",
+    "implementationRevision": "a5589822a002f1833510338ee7ab8d91bbc819592cdfaa9f6d7acbd15eb45350"
   },
   "inputs": {
     "fixtureRevision": "synthetic-execution-fixtures-1",

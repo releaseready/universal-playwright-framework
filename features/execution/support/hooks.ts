@@ -114,6 +114,20 @@ Before(async function (
   this.browser = browser;
   this.payload = payload;
   this.context = await browser.newContext({ serviceWorkers: "block" });
+  await this.context.routeWebSocket("**/*", (socket) => socket.close());
+  await this.context.addInitScript(() => {
+    for (const name of [
+      "RTCPeerConnection",
+      "webkitRTCPeerConnection",
+      "WebTransport",
+    ]) {
+      Object.defineProperty(globalThis, name, {
+        value: undefined,
+        configurable: false,
+        writable: false,
+      });
+    }
+  });
   await this.context.route("**/*", async (route) => {
     let destination: URL | undefined;
     try {

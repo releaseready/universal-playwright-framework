@@ -35,6 +35,10 @@
     {
       "reference": "synthetic-redirect",
       "secretReference": "unused-synthetic-reference"
+    },
+    {
+      "reference": "synthetic-local-demo",
+      "secretReference": "unused-synthetic-reference"
     }
   ],
   "scenarios": [
@@ -139,6 +143,21 @@
       "accountReference": "synthetic-redirect",
       "cleanup": {
         "reference": "synthetic-cleanup-redirect",
+        "authorizationRevision": "unverified-cleanup-1",
+        "requested": true
+      }
+    },
+    {
+      "id": "local-demo-navigation",
+      "values": {
+        "displayName": {
+          "classification": "non-sensitive",
+          "value": "Synthetic Local Visitor"
+        }
+      },
+      "accountReference": "synthetic-local-demo",
+      "cleanup": {
+        "reference": "synthetic-cleanup-local-demo",
         "authorizationRevision": "unverified-cleanup-1",
         "requested": true
       }

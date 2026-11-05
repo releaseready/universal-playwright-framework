@@ -141,7 +141,7 @@ function sameReferences(
   return Object.keys(left).every((key) => left[key] === right[key]);
 }
 
-function lifecycle(
+export function adapterLifecycle(
   summary: Lifecycle & {
     resourceCleanup: ExecutionSummary["resourceCleanup"];
   },
@@ -179,6 +179,8 @@ export async function executeAdapter(
     return reject("INVALID_CONTEXT");
 
   try {
+    if (request.scenarioIds.includes("local-demo-navigation"))
+      return reject("UNSUPPORTED_SCENARIO");
     const { approval, validation } = await loadReviewedScenarios();
     if (
       !sameReferences(request.approval, {
@@ -249,9 +251,9 @@ export async function executeAdapter(
     inputs: request.inputs,
     report: createExecutionReport(summary),
     lifecycle: {
-      ...lifecycle(summary),
+      ...adapterLifecycle(summary),
       attempts: summary.attempts.map((attempt) => ({
-        ...lifecycle(attempt),
+        ...adapterLifecycle(attempt),
         attemptNumber: attempt.attemptNumber,
         diagnosticReference: attempt.diagnosticReference,
         scenarios: attempt.scenarios.map((scenario) => ({

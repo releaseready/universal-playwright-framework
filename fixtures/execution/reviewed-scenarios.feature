@@ -39,3 +39,11 @@ Feature: Execute reviewed synthetic scenarios
     Given the synthetic reviewed page is open
     When I follow a redirect to an unapproved target
     Then the unapproved navigation was blocked
+
+  @scenario-id=local-demo-navigation @web-safe-execution-S04
+  Scenario: A visitor explores the owned local demo and returns to sign in
+    Given the synthetic reviewed page is open
+    When I explore the owned local demo
+    Then the owned local demo shows its synthetic workspace and project
+    When I return from the owned local demo to sign in
+    Then the owned local sign in page is visible

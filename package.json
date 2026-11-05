@@ -16,6 +16,10 @@
     "./data-references/v1": {
       "types": "./dist/cucumber/src/input-preparation/data-references.d.ts",
       "default": "./dist/cucumber/src/input-preparation/data-references.js"
+    },
+    "./adapter/v2": {
+      "types": "./dist/cucumber/src/adapter/v2.d.ts",
+      "default": "./dist/cucumber/src/adapter/v2.js"
     }
   },
   "scripts": {
@@ -54,7 +58,8 @@
     "test:typescript-source-policy": "npm run check:typescript && node --test dist/cucumber/scripts/typescript-source-policy.test.js",
     "test:login-inspection": "npm run build:cucumber && node --test dist/cucumber/scripts/login-inspection.test.js",
     "inspect:partay-login": "npm run build:cucumber && node dist/cucumber/scripts/inspect-partay-login.js",
-    "test:authentication-only": "npm run build:cucumber && node --test dist/cucumber/scripts/authentication-only.test.js"
+    "test:authentication-only": "npm run build:cucumber && node --test dist/cucumber/scripts/authentication-only.test.js",
+    "test:owned-local": "npm run build:cucumber && node --test dist/cucumber/scripts/owned-local-adapter.test.js"
   },
   "keywords": [
     "playwright",

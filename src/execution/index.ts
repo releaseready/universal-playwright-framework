@@ -3,7 +3,7 @@ import { lstatSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { performance } from "node:perf_hooks";
-import { chromium, type BrowserServer } from "@playwright/test";
+import { chromium, type BrowserServer } from "playwright-core";
 import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -99,6 +99,11 @@ export interface ExecutionAttemptSummary extends SingleExecutionSummary {
 
 export interface ExecutionOptions {
   readonly scenarioIds?: readonly string[];
+  /** Trusted local composition only; public callers use adapter/v2. */
+  readonly ownedLocalTarget?: { readonly origin: string };
+  readonly browserExecutablePath?: string;
+  readonly authorizationExpiresAt?: number;
+  readonly beforeBrowserAcquire?: () => Promise<void>;
   readonly runTimeoutMs?: number;
   readonly scenarioTimeoutMs?: number;
   readonly maxConcurrentScenarios?: number;
@@ -202,6 +207,25 @@ function validateOptions(
       !options.scenarioIds?.includes("retry-assertion-flow"))
   ) {
     throw new RangeError("Synthetic execution limits are outside their bounds");
+  }
+  if (options.ownedLocalTarget) {
+    const origin = new URL(options.ownedLocalTarget.origin);
+    if (
+      origin.protocol !== "http:" ||
+      origin.hostname !== "127.0.0.1" ||
+      !origin.port ||
+      origin.origin !== options.ownedLocalTarget.origin ||
+      options.scenarioIds?.length !== 1 ||
+      options.scenarioIds[0] !== "local-demo-navigation" ||
+      retryCount !== 0 ||
+      concurrency !== 1
+    ) {
+      throw new RangeError(
+        "Owned local execution is outside its reviewed boundary",
+      );
+    }
+  } else if (options.scenarioIds?.includes("local-demo-navigation")) {
+    throw new RangeError("Owned local target is required");
   }
   return { runTimeoutMs, scenarioTimeoutMs, concurrency, retryCount };
 }
@@ -921,13 +945,28 @@ async function executeReviewedScenarioAttempt(
       );
     }
 
-    const localRuntime = await startFixtureServer();
+    if (
+      options.authorizationExpiresAt !== undefined &&
+      options.authorizationExpiresAt <= Date.now()
+    )
+      throw new Error("Execution approval expired");
+    const localRuntime = options.ownedLocalTarget
+      ? {
+          ...options.ownedLocalTarget,
+          server: undefined,
+          sockets: new Set<Socket>(),
+          redirectServer: undefined,
+          redirectSockets: new Set<Socket>(),
+          redirectTargetUrl: "http://127.0.0.1:1/blocked",
+          blockedTargetRequestCount: () => 0,
+        }
+      : await startFixtureServer();
     server = localRuntime.server;
     serverSockets = localRuntime.sockets;
     redirectServer = localRuntime.redirectServer;
     redirectSockets = localRuntime.redirectSockets;
     blockedTargetRequestCount = localRuntime.blockedTargetRequestCount;
-    resourcesAcquired = true;
+    resourcesAcquired = !options.ownedLocalTarget;
     const selectedIds = selection.scenarios.map(
       (scenario) => scenario.id as string,
     );
@@ -938,13 +977,27 @@ async function executeReviewedScenarioAttempt(
       reviewedFixturePolicy,
       filters,
     );
+    if (options.ownedLocalTarget) {
+      (
+        descriptor.environment as { initialTargetUrl: string }
+      ).initialTargetUrl = `${localRuntime.origin}/`;
+    }
     temporaryDirectory = mkdtempSync(
       path.join(tmpdir(), `rrdweb4-${diagnosticReference}-`),
     );
+    await options.beforeBrowserAcquire?.();
+    if (
+      runController.signal.aborted ||
+      (options.authorizationExpiresAt !== undefined &&
+        options.authorizationExpiresAt <= Date.now())
+    )
+      throw new Error("Execution approval unavailable");
     try {
+      resourcesAcquired = true;
       browserServer = await chromium.launchServer({
         host: "127.0.0.1",
         headless: true,
+        executablePath: options.browserExecutablePath,
         timeout: 10_000,
       });
       const browserProcessId = browserServer.process().pid;
