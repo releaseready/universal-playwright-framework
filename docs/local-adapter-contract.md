@@ -354,5 +354,9 @@ inferred from browser shutdown. Only the central target owner may stop its targe
 the adapter stops only browser/worker resources it acquired.
 
 Run `npm run test:owned-local` for the public contract and owned synthetic browser
-checks. Tests use the explicit system Chromium when available; actual ReleaseReady
-controller/target/restart acceptance belongs to the central repository.
+checks with pinned Playwright by default. For an explicit host diagnostic only,
+`RR139_SYSTEM_CHROMIUM=1 npm run test:owned-local` selects `/usr/bin/chromium`;
+its presence alone never changes the default, and arbitrary executable paths are
+not accepted. System-browser diagnostics do not prove pinned-browser compatibility.
+Actual ReleaseReady controller/target/restart acceptance belongs to the central
+repository.

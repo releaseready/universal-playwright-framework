@@ -9,7 +9,7 @@ test("Given the installed public API, an owned-local request has a separate v2 e
 });
 
 import { createServer } from "node:http";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { chromium } from "@playwright/test";
 import { mock } from "node:test";
 import {
@@ -61,11 +61,40 @@ function owner(request: OwnedLocalRequest): OwnedLocalContext {
     callerId: "synthetic-controller",
     request,
     approval: { active: true, expiresAt: Date.now() + 60000 },
-    ...(existsSync("/usr/bin/chromium")
+    ...(process.env.RR139_SYSTEM_CHROMIUM === "1"
       ? { browserExecutablePath: "/usr/bin/chromium" as const }
       : {}),
   };
 }
+
+test("Given diagnostic browser selection, only an explicit opt-in overrides pinned Playwright", async () => {
+  const request = await requestFor();
+  const previous = process.env.RR139_SYSTEM_CHROMIUM;
+  try {
+    for (const flag of [
+      undefined,
+      "0",
+      "true",
+      "/tmp/arbitrary-browser",
+      "1",
+    ]) {
+      if (flag === undefined) delete process.env.RR139_SYSTEM_CHROMIUM;
+      else process.env.RR139_SYSTEM_CHROMIUM = flag;
+      const context = owner(request);
+      assert.equal(
+        context.browserExecutablePath,
+        flag === "1" ? "/usr/bin/chromium" : undefined,
+      );
+      assert.equal(
+        Object.hasOwn(context, "browserExecutablePath"),
+        flag === "1",
+      );
+    }
+  } finally {
+    if (previous === undefined) delete process.env.RR139_SYSTEM_CHROMIUM;
+    else process.env.RR139_SYSTEM_CHROMIUM = previous;
+  }
+});
 
 test("Given missing, expired, revoked or cross-scope approval, admission rejects before browser acquisition", async () => {
   const request = await requestFor();
