@@ -11,7 +11,7 @@
   "approval": {
     "sourceRevision": "rrdweb4-synthetic-source-1",
     "featureRevision": "3067cf359002bc03e262c3ef61824fe48caebf268cea48758e7d4ffee32b205f",
-    "implementationRevision": "1ed5cb227d0d44053f0943e589e74bf937f54b80e65a79fa80c7ea35d7d05851"
+    "implementationRevision": "b0a2b58f164f3f2ae47037f54f95f3dfe1a7940d17818423465864625324015a"
   },
   "inputs": {
     "fixtureRevision": "synthetic-execution-fixtures-1",

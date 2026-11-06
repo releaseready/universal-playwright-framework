@@ -209,6 +209,79 @@ test("partial, repeated, mismatched and oversized snapshots fail closed", () => 
   }
 });
 
+test("snapshot shape accepts all six top-level key orders", () => {
+  const entries: [string, unknown][] = [
+    ["schemaVersion", 1],
+    ["scenarioId", "local-demo-navigation"],
+    ["steps", names.map(() => "passed")],
+  ];
+  for (const order of [
+    [0, 1, 2],
+    [0, 2, 1],
+    [1, 0, 2],
+    [1, 2, 0],
+    [2, 0, 1],
+    [2, 1, 0],
+  ]) {
+    const raw = JSON.stringify(
+      Object.fromEntries(order.map((index) => entries[index])),
+    );
+    assert.deepEqual(
+      parseOwnedEvidence(raw, "local-demo-navigation")?.steps,
+      names.map((name) => ({ name, status: "passed" })),
+    );
+  }
+});
+
+test("snapshot shape rejects non-objects, missing or extra keys and deceptive property names", () => {
+  const entries: [string, unknown][] = [
+    ["schemaVersion", 1],
+    ["scenarioId", "local-demo-navigation"],
+    ["steps", names.map(() => "passed")],
+  ];
+  const valid = Object.fromEntries(entries);
+  const invalid: unknown[] = [
+    null,
+    false,
+    true,
+    1,
+    "scenarioId,schemaVersion,steps",
+    [],
+    [valid],
+    {},
+    { ...valid, schemaVersion: "1" },
+    { ...valid, schemaVersion: 2 },
+    { ...valid, scenarioId: "browser-flow" },
+    { ...valid, steps: { length: 5 } },
+    { ...valid, steps: ["passed", "passed", null, "passed", "passed"] },
+  ];
+  for (let omitted = 0; omitted < entries.length; omitted++) {
+    const remaining = entries.filter((_, index) => index !== omitted);
+    invalid.push(Object.fromEntries(remaining));
+    for (const key of [
+      "",
+      "extra",
+      "__proto__",
+      "constructor",
+      "toString",
+      "scenarioId,schemaVersion,steps",
+      "schemaVersion\u0000",
+      "SchemaVersion",
+      "\uff53chemaVersion",
+    ]) {
+      // fromEntries preserves __proto__ as an own data key in the JSON input.
+      invalid.push(Object.fromEntries([...remaining, [key, 1]]));
+      invalid.push(Object.fromEntries([...entries, [key, 1]]));
+    }
+  }
+  for (const value of invalid) {
+    assert.equal(
+      parseOwnedEvidence(JSON.stringify(value), "local-demo-navigation"),
+      undefined,
+    );
+  }
+});
+
 test("snapshot reader rejects unsafe filesystem types and size before reading", () => {
   const directory = mkdtempSync(path.join(tmpdir(), "rr139-evidence-input-"));
   try {

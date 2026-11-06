@@ -42,10 +42,15 @@ export function parseOwnedEvidence(
     return undefined;
   try {
     const value = JSON.parse(raw);
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      return undefined;
+    const keys = Object.keys(value);
     if (
-      !value ||
-      Object.keys(value).sort().join(",") !==
-        "scenarioId,schemaVersion,steps" ||
+      keys.length !== 3 ||
+      !keys.every(
+        (key) =>
+          key === "scenarioId" || key === "schemaVersion" || key === "steps",
+      ) ||
       value.schemaVersion !== 1 ||
       value.scenarioId !== OWNED_EVIDENCE_ID ||
       !Array.isArray(value.steps) ||
