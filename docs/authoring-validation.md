@@ -28,7 +28,7 @@ feature discovery.
 | `npx tsc -p examples/authoring/tsconfig.json` | Pass; both runner adapters, shared models and regression tests compile |
 | `npx eslint src/readiness/wait-for-visible.ts src/pages/base-page.ts src/index.ts examples/authoring --ext .ts` | Pass |
 | `npx playwright test --config examples/authoring/playwright.config.ts --repeat-each=3 --workers=4` | Pass; 30 tests, zero retries |
-| `npx cucumber-js --config examples/authoring/cucumber.json` | Pass; 3 scenarios / 9 steps with 3 workers |
+| `npx cucumber-js --config examples/authoring/cucumber.json` | Pass; 3 scenarios / 11 steps with 3 workers |
 | `node --test dist/authoring/examples/authoring/regression/authoring.test.js` | Pass; 7 regression tests |
 | `npm run test:features` | Pass; existing owned Cucumber suite, 12 scenarios / 52 steps |
 | `npm run lint` | Fail; 33 errors, normalized output identical to pristine baseline in a separate worktree |
@@ -51,7 +51,18 @@ once closing starts, and confirms only error-free closure. If setup never settle
 the After hook times out instead of claiming cleanup succeeded. Abrupt OS process
 termination is not represented as graceful cleanup support.
 
-## Clean consumer check
+## POM wording follow-up
+
+All five POM scenario steps end with `on the Draft Screen` and name the form,
+field, button, status message or list they act on/assert. Entered and expected values
+use reusable Cucumber string parameters; fixed controls map to page/component methods.
+The POM scenario has no inherited Background lacking the screen suffix. The existing
+`DraftEditor.save(title)` method remains compatible through composition of
+`enterTitle(title)` and `saveDraft()`. Independent source review found no issues.
+Dedicated compilation/lint, all three Cucumber scenarios (11 steps), seven regression
+checks and the repeated parallel Playwright suite were rerun for this follow-up.
+
+## Clean consumer check (preceding head 150a14c)
 
 A fresh archive of the staged source was extracted outside the working checkout,
 without node_modules or generated output. `npm ci` installed locked dependencies

@@ -48,11 +48,47 @@ When(
   },
 );
 
-When(
-  "I save the draft with the page and editor component",
+// POM convention: identify the control, parameterize values, and end in the
+// concrete screen name. Bind controls to page methods, not a generic locator DSL.
+Given(
+  'the "Draft editor" form is ready and the "Drafts" list is empty on the Draft Screen',
   async function (this: DraftWorld) {
     await this.drafts.open();
-    await this.drafts.editor.save(this.draft.title);
+    await expect(this.drafts.drafts).toHaveCount(0);
+    expect(await this.drafts.getLocalStorageItem("lastDraft")).toBeNull();
+    expect(this.draft).toEqual(buildDraft());
+    this.draft.tags.push("scenario-only");
+    expect(buildDraft().tags).toEqual(["synthetic"]);
+  },
+);
+
+When(
+  'I enter {string} in the "Title" field on the Draft Screen',
+  async function (this: DraftWorld, title: string) {
+    this.draft = buildDraft({ title });
+    await this.drafts.editor.enterTitle(title);
+  },
+);
+
+When(
+  'I click the "Save draft" button on the Draft Screen',
+  async function (this: DraftWorld) {
+    await this.drafts.editor.saveDraft();
+  },
+);
+
+Then(
+  "the status message shows {string} on the Draft Screen",
+  async function (this: DraftWorld, expected: string) {
+    await expect(this.drafts.status).toHaveText(expected, { timeout: 3000 });
+  },
+);
+
+Then(
+  'the "Drafts" list contains only {string} on the Draft Screen',
+  async function (this: DraftWorld, title: string) {
+    await expect(this.drafts.drafts).toHaveText([title]);
+    expect(await this.drafts.getLocalStorageItem("lastDraft")).toBe(title);
   },
 );
 

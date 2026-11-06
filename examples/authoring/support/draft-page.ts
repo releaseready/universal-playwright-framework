@@ -7,13 +7,21 @@ export class DraftEditor extends BaseComponent {
     super(page, 'form[aria-label="Draft editor"]');
   }
 
-  async save(title: string): Promise<void> {
+  async enterTitle(title: string): Promise<void> {
     await this.rootLocator
       .getByRole("textbox", { name: "Title", exact: true })
       .fill(title);
+  }
+
+  async saveDraft(): Promise<void> {
     await this.rootLocator
       .getByRole("button", { name: "Save draft", exact: true })
       .click();
+  }
+
+  async save(title: string): Promise<void> {
+    await this.enterTitle(title);
+    await this.saveDraft();
   }
 }
 

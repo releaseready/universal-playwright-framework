@@ -45,6 +45,23 @@ they are not included in the normal Cucumber configuration.
 adapter; `cucumber/world.ts` and hooks in `cucumber/steps.ts` are the Cucumber adapter.
 The three Gherkin scenarios call specific business steps, not a generic keyword DSL.
 
+For POM steps, use one consistent convention: **action or expected state + named
+field/control + `on the <Page name> Screen`**. Every POM step, including setup and
+assertions, ends with the concrete screen name. Parameterize entered/expected values;
+keep control names bound to specific page/component methods. For example:
+
+```gherkin
+When I enter "Synthetic rehearsal" in the "Title" field on the Draft Screen
+And I click the "Save draft" button on the Draft Screen
+Then the status message shows "Saved: Synthetic rehearsal" on the Draft Screen
+And the "Drafts" list contains only "Synthetic rehearsal" on the Draft Screen
+```
+
+Reuse these bindings for different values on the same screen. Add screen-specific
+bindings for other pages rather than mapping arbitrary strings to locators. Simple
+and Business Flows retain their distinct organization; the screen convention applies
+to POM scenarios, including any Background steps they inherit.
+
 The origin `https://authoring.invalid/` is intercepted locally. Unknown requests are
 blocked, service workers are disabled, and no customer system is contacted. Each
 Playwright test and Cucumber scenario owns fresh storage and data. Cucumber reports
