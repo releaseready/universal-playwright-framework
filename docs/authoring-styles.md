@@ -1,30 +1,30 @@
 # Choose organization independently from syntax
 
-RRDWEB-12 first slice: owned local synthetic examples, not a portal execution feature.
+RRDWEB-12 owned local starter: all three styles in both runners, not a portal execution feature.
 
 Choose the smallest structure that helps the team:
 
 | Organization | Use when | Example |
 | --- | --- | --- |
-| Simple | A short test is easiest to read with locators inline | `tests/authoring/simple.spec.ts` |
-| Page Objects + Components (recommended starting point) | Pages and repeated UI regions benefit from named operations | `tests/authoring/page-objects.spec.ts`, `support/draft-page.ts` |
-| Business Flows | A repeated business operation spans reusable page operations | `tests/authoring/business-flows.spec.ts`, `support/draft-flow.ts` |
+| Simple | A short test is easiest to read with locators inline | `examples/authoring/simple.spec.ts` |
+| Page Objects + Components (recommended starting point) | Pages and repeated UI regions benefit from named operations | `examples/authoring/page-objects.spec.ts`, `support/draft-page.ts` |
+| Business Flows | A repeated business operation spans reusable page operations | `examples/authoring/business-flows.spec.ts`, `support/draft-flow.ts` |
 
 These are organization choices, not different languages or execution permissions.
 TypeScript Playwright Test specs and Gherkin scenarios with TypeScript Cucumber step
 implementations can each use any of these structures. There is no keyword DSL.
 BasePage and BaseComponent remain optional; flows use composition, not deep inheritance.
 
-## Runnable capability matrix for this slice
+## Runnable capability matrix
 
 | Organization | TypeScript / Playwright Test | Gherkin / Cucumber | Portal integration |
 | --- | --- | --- | --- |
-| Simple | Runnable owned draft example | Future equivalent draft scenario | Future |
-| Page Objects + Components | Runnable owned draft example | Future equivalent draft scenario | Future |
-| Business Flows | Runnable owned draft example | Future equivalent draft scenario | Future |
+| Simple | Runnable owned draft example | Runnable owned draft scenario | Future |
+| Page Objects + Components | Runnable owned draft example | Runnable owned draft scenario | Future |
+| Business Flows | Runnable owned draft example | Runnable owned draft scenario | Future |
 
-Existing Cucumber synthetic/login examples and runners remain available; they are not
-new three-style draft examples. `features/steps/login-ui-page.ts` already reuses BasePage.
+Existing Cucumber synthetic/login examples and runners remain available alongside
+the dedicated three-style draft scenarios under `examples/authoring/cucumber`. `features/steps/login-ui-page.ts` already reuses BasePage.
 This change does not claim arbitrary TypeScript uploads, generated-code execution,
 portal style selection, or new runtime admission support.
 
@@ -35,18 +35,24 @@ matching the pinned Playwright package with `npx playwright install chromium`.
 Do not substitute a system browser.
 
 ```sh
-npx playwright test --config tests/authoring/playwright.config.ts
-npx playwright test --config tests/authoring/playwright.config.ts --repeat-each=3 --workers=4
+npx tsc -p examples/authoring/tsconfig.json
+npx playwright test --config examples/authoring/playwright.config.ts
+npx cucumber-js --config examples/authoring/cucumber.json
+npx playwright test --config examples/authoring/playwright.config.ts --repeat-each=3 --workers=4
 ```
 
-The dedicated config avoids the default auth setup and customer/global configuration.
+The suite lives outside root `tests/` and `features/` discovery. Dedicated configs
+avoid the default auth setup and customer/global configuration.
 All requests from these tests are intercepted: the reserved `authoring.invalid` origin
 serves repository-owned HTML, synthetic telemetry is fulfilled locally, and other
 requests are blocked. No real account, purchase, customer data or service is involved.
 
 Playwright creates a fresh browser context/page per test and retry. The shared
 `support/fixtures.ts` composes a page, component, flow and draft data at **test scope**.
-The same deterministic builder returns fresh arrays on every call, supports explicit
+Cucumber creates a fresh World/browser/context per scenario and uses the same
+runner-neutral page, component, flow and builder. Each scenario attaches cleanup
+confirmation after closing its owned resources. The deterministic builder returns
+fresh arrays on every call, supports explicit
 overrides and uses no clock, random state or global counter. Repetition safely reuses
 the same title because storage is context-local. This is not a uniqueness guarantee
 for a shared remote service, nor a TDM lease; RRDSCRUM-21 remains separate and deferred.
@@ -85,16 +91,25 @@ asserts the exact saved title and list content. Regression tests demonstrate del
 UI, ongoing traffic, missing/hidden state failures, invalid timeout rejection,
 false-pass prevention and fresh storage/data across repeated parallel tests.
 
+## Starter distribution and migration
+
+The supported starter is a full repository checkout/archive with locked dependencies.
+It reuses existing source imports without adding public exports beyond the readiness
+helper. A separate TypeScript config builds both runner adapters and shared models;
+embedded HTML eliminates compiled asset-path assumptions. See
+[the maintained starter README](../examples/authoring/README.md) for commands and
+migration from the unchanged legacy `tests/example-app.spec.ts`.
+
 ## Remaining stages
 
-1. Add equivalent draft Gherkin scenarios and TypeScript steps with a fresh Cucumber
-   World/context per scenario, reusing the same page/component/flow and builder.
-   Keep runner lifecycle adapters separate from business operations; verify parallel
-   scenarios and failure propagation before marking those matrix cells runnable.
-2. Agree the maintained starter packaging and migration path for the older generic
-   `tests/example-app.spec.ts`. These new examples are checkout examples, not a new
-   package-export API or automatic project generator.
-3. Coordinate a separate portal integration with its owners. Review how syntax and
+1. Coordinate a separate portal integration with its owners. Review how syntax and
    organization are represented without implying upload or execution authorization.
-   Portal selector/redesign, AI generation, leased data and runtime admission remain
-   out of this slice. No PR46 teardown, evidence or adapter-pin changes are included.
+2. Consider standalone starter packaging only if a separate-folder/npm distribution
+   is needed. The current supported distribution is a complete reviewed checkout;
+   copying the examples folder alone is not supported.
+
+Portal selector/redesign, AI generation, leased data and runtime admission remain
+out of scope. No PR46 teardown, evidence or adapter-pin changes are included.
+RRDSCRUM-21 remains separately deferred. Cucumber regression covers context
+interruption and assertion/readiness failures, not graceful cleanup after abrupt OS
+process termination. No signal-control layer is added.

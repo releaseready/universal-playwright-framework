@@ -1,0 +1,9 @@
+{
+  "default": {
+    "paths": ["examples/authoring/cucumber/drafts.feature"],
+    "require": ["dist/authoring/examples/authoring/cucumber/steps.js"],
+    "format": ["progress"],
+    "parallel": 3,
+    "retry": 0
+  }
+}

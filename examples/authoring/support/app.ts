@@ -1,4 +1,5 @@
-<!doctype html>
+/** Owned synthetic UI, embedded so compiled starters need no asset-copy step. */
+export const appHtml = `<!doctype html>
 <html lang="en"><head><title>Owned authoring example</title></head><body>
 <h1>Draft rehearsal</h1>
 <form aria-label="Draft editor" hidden>
@@ -21,3 +22,4 @@ document.querySelector('form').addEventListener('submit', event => {
   document.querySelector('[role="status"]').textContent = 'Saved: ' + title;
 });
 </script></body></html>
+`;
