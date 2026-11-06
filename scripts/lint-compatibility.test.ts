@@ -16,18 +16,60 @@ import { Logger } from "../src/utils/logger";
 import globalSetup from "../src/utils/global-setup";
 import { withLoopbackServer } from "./fixtures/loopback-server";
 
-// Compile-only examples of existing public consumers. Never invoke their I/O.
+// Compile-only compatibility assertions use this checkout's public API, without
+// an external baseline or generated fixtures. Never invoke their I/O.
+type IsAny<Value> = 0 extends 1 & Value ? true : false;
+type PermissiveDefaults<Responses extends readonly ApiResponse<unknown>[]> = {
+  [Index in keyof Responses]: IsAny<Responses[Index]["data"]>;
+};
 export async function existingPublicConsumer(
   client: ApiClient,
   config: FullConfig,
 ): Promise<void> {
-  const responses: ApiResponse[] = [
+  const responses = [
     await client.get("/"),
     await client.post("/", Symbol("input")),
     await client.put("/", () => "input"),
     await client.patch("/", new Date()),
     await client.delete("/"),
     await client.uploadFile("/", "file", "file", { extra: () => "input" }),
+  ] as const;
+  const defaultChecks: PermissiveDefaults<typeof responses> = [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+  ];
+  const argumentChecks: [
+    IsAny<ApiResponse["data"]>,
+    IsAny<NonNullable<Parameters<ApiClient["get"]>[1]>["data"]>,
+    IsAny<Parameters<ApiClient["post"]>[1]>,
+    IsAny<Parameters<ApiClient["put"]>[1]>,
+    IsAny<Parameters<ApiClient["patch"]>[1]>,
+    IsAny<NonNullable<Parameters<ApiClient["uploadFile"]>[3]>[string]>,
+    IsAny<Parameters<Logger["debug"]>[1]>,
+    IsAny<Parameters<Logger["info"]>[1]>,
+    IsAny<Parameters<Logger["warn"]>[1]>,
+    IsAny<Parameters<Logger["error"]>[2]>,
+    IsAny<Parameters<typeof TestUtils.saveToFile>[1]>,
+    IsAny<Awaited<ReturnType<typeof TestUtils.loadFromFile>>>,
+    IsAny<Awaited<ReturnType<typeof TestUtils.getPerformanceMetrics>>>,
+  ] = [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
   ];
   const unchecked: number = responses[0].data.nested.value;
   const typed = await client.get<{ value: number }>("/");
@@ -42,7 +84,12 @@ export async function existingPublicConsumer(
     );
   const setup: (configuration: FullConfig) => Promise<void> = globalSetup;
   await setup(config);
-  await TestUtils.saveToFile("file", { numbers, metrics });
+  await TestUtils.saveToFile("file", {
+    numbers,
+    metrics,
+    defaultChecks,
+    argumentChecks,
+  });
 }
 
 test("API options and response handling retain existing observable behavior", async (context) => {

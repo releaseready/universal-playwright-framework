@@ -21,7 +21,8 @@ operation-derived replacement:
 | `globalSetup` parameter                  | `@typescript-eslint/no-unused-vars`  | The callback accepts a configuration argument and retains runtime arity one. `_config` expresses its intentionally unused status to TypeScript. Removing the formal argument changes arity; dummy reads or metadata rewriting are unnecessary. |
 
 Each exception is limited to its declaration and rule. No ESLint configuration,
-assertion, deadline, concurrency setting or aggregate command changes.
+assertion, deadline or concurrency setting changes. The regression aggregate now
+appends a compatibility stage after all existing stages.
 
 Compatibility verification compares declarations emitted from the preserved
 pre-repair candidate against the repaired build using TypeScript equality checks
@@ -32,7 +33,12 @@ types; it cannot promise equality after future upstream declaration changes.
 
 `scripts/lint-compatibility.test.ts` also checks actual API option/response behavior,
 console argument forwarding, file serialization/failure behavior, setup arity and
-early server closure. After `npm run build`, run it explicitly with
-`node --test dist/cucumber/scripts/lint-compatibility.test.js` alongside the normal
-regression aggregate. The unchanged aggregate already includes the expanded
-runtime-login and reporting regressions.
+early server closure. `npm run test:features:regression` automatically runs it as
+its final `test:lint-compatibility` stage, after every pre-existing stage. Run
+`npm run test:lint-compatibility` on its own for focused feedback; it compiles its
+TypeScript dependencies before running the tests. Its compile-only assertions
+also preserve the public default-response and permissive argument/return types.
+It uses owned loopback fixtures and temporary files, and requires no baseline
+checkout, pre-existing build, customer service, browser installation or special
+environment variable. The existing stages retain the expanded runtime-login and
+reporting regressions.
