@@ -1,3 +1,7 @@
+import {
+  withIsolatedReviewedPackage,
+  assertOriginalReviewUnaffected,
+} from "./isolated-reviewed-package";
 import { runtimePackagePath } from "../src/execution/reviewed-scenarios";
 import childProcess, { type SpawnOptions } from "node:child_process";
 import { once } from "node:events";
@@ -421,31 +425,57 @@ test("formatter refuses identity mismatch, incomplete results and retries; emits
 });
 
 test("new source and runtime helpers are fingerprinted; changed artifacts reject stale review", async () => {
-  const { calculateReviewedImplementationRevision, loadReviewedScenarios } =
-    await import("../src/execution/reviewed-scenarios");
-  await loadReviewedScenarios();
-  const baseline = calculateReviewedImplementationRevision();
-  for (const file of [
-    "src/execution/owned-evidence.ts",
-    "src/execution/owned-evidence-formatter.ts",
-    "dist/cucumber/src/execution/owned-evidence.js",
-    "dist/cucumber/src/execution/owned-evidence-formatter.js",
-  ]) {
-    const full = path.join(root, file),
-      original = readFileSync(full);
-    try {
-      writeFileSync(
-        full,
-        Buffer.concat([
-          original,
-          Buffer.from("\n// synthetic identity mutation\n"),
-        ]),
-      );
-      assert.notEqual(calculateReviewedImplementationRevision(), baseline);
-      await assert.rejects(loadReviewedScenarios(), /review is stale/);
-    } finally {
-      writeFileSync(full, original);
+  await withIsolatedReviewedPackage(async (isolated) => {
+    const { calculateReviewedImplementationRevision, loadReviewedScenarios } =
+      (await import(
+        path.join(isolated, "dist/cucumber/src/execution/reviewed-scenarios.js")
+      )) as typeof import("../src/execution/reviewed-scenarios");
+    await loadReviewedScenarios();
+    const baseline = calculateReviewedImplementationRevision();
+    for (const file of [
+      "src/execution/owned-evidence.ts",
+      "src/execution/owned-evidence-formatter.ts",
+      "dist/cucumber/src/execution/owned-evidence.js",
+      "dist/cucumber/src/execution/owned-evidence-formatter.js",
+    ]) {
+      const full = path.join(isolated, file),
+        original = readFileSync(full);
+      try {
+        writeFileSync(
+          full,
+          Buffer.concat([
+            original,
+            Buffer.from("\n// synthetic identity mutation\n"),
+          ]),
+        );
+        assert.notEqual(calculateReviewedImplementationRevision(), baseline);
+        await assert.rejects(loadReviewedScenarios(), /review is stale/);
+        assertOriginalReviewUnaffected(file, isolated, original);
+      } finally {
+        writeFileSync(full, original);
+      }
+      assert.equal(calculateReviewedImplementationRevision(), baseline);
+      await loadReviewedScenarios();
     }
-    assert.equal(calculateReviewedImplementationRevision(), baseline);
-  }
+  });
+});
+
+test("isolated package is removed even when a mutation assertion fails", async () => {
+  let owned = "";
+  await assert.rejects(
+    withIsolatedReviewedPackage(async (isolated) => {
+      owned = isolated;
+      writeFileSync(
+        path.join(isolated, "src/execution/owned-evidence.ts"),
+        "synthetic mutation",
+      );
+      throw new Error("synthetic assertion failure");
+    }),
+    /synthetic assertion failure/,
+  );
+  assert.equal(existsSync(owned), false);
+  const { loadReviewedScenarios } = await import(
+    "../src/execution/reviewed-scenarios"
+  );
+  await loadReviewedScenarios();
 });
