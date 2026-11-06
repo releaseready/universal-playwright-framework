@@ -1,3 +1,4 @@
+import { OWNED_EVIDENCE_ID, readOwnedEvidence } from "./owned-evidence";
 import { randomUUID } from "node:crypto";
 import { lstatSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
@@ -695,6 +696,12 @@ async function executeScenario(
       `@scenario-id=${scenarioId}`,
       "--format",
       `json:${reportPath}`,
+      ...(scenarioId === OWNED_EVIDENCE_ID
+        ? [
+            "--format",
+            `${path.join(REPOSITORY_ROOT, "dist/cucumber/src/execution/owned-evidence-formatter.js")}:${reportPath}.completed`,
+          ]
+        : []),
       "--strict",
     ],
     {
@@ -796,7 +803,9 @@ async function executeScenario(
   }
 
   const cleanup = safeCleanupReport(cleanupPath);
-  const cucumber = cucumberScenarioEvidence(reportPath, scenarioId);
+  const cucumber =
+    cucumberScenarioEvidence(reportPath, scenarioId) ??
+    readOwnedEvidence(`${reportPath}.completed`, scenarioId);
   const scenarioPassed = cucumber
     ? cucumber.steps.every((step) => step.status === "passed")
     : undefined;

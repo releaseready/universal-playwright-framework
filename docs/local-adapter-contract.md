@@ -360,3 +360,21 @@ its presence alone never changes the default, and arbitrary executable paths are
 not accepted. System-browser diagnostics do not prove pinned-browser compatibility.
 Actual ReleaseReady controller/target/restart acceptance belongs to the central
 repository.
+
+### Owned-local teardown evidence
+
+For the fixed `local-demo-navigation` journey, a bounded completed-case formatter
+retains observed business-step statuses at Cucumber's `testCaseFinished` event.
+This supplements the usual JSON report when a throwing `AfterAll` hook prevents
+JSON finalization. It accepts only the reviewed feature, scenario, ordered steps,
+and first non-retried completed case; the snapshot contains a fixed scenario ID
+and status enums, at most 1024 bytes. No error bodies, attachments, URLs, input
+values or arbitrary step text are copied. Normal valid JSON remains preferred.
+Missing, partial, mismatched or unsafe snapshots remain unavailable evidence.
+
+The existing teardown hooks still throw, worker failure remains nonzero, and
+cleanup failure codes remain visible. Available business evidence does not turn
+an operational cleanup failure into success: v2 reports it as incomplete unless
+an observed business step failed. Later confirmation that owned processes stopped
+continues to be distinct from the earlier context-close failure. This does not
+identify or repair the cause of a context-close rejection.
