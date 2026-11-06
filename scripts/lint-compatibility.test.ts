@@ -12,6 +12,7 @@ import {
 } from "@playwright/test";
 import { ApiClient, type ApiResponse } from "../src/api/api-client";
 import { TestUtils } from "../src/utils/test-utils";
+import { Logger } from "../src/utils/logger";
 import globalSetup from "../src/utils/global-setup";
 import { withLoopbackServer } from "./fixtures/loopback-server";
 
@@ -198,5 +199,90 @@ test("early stopped-server cleanup preserves timer ordering without uninitialize
     );
     callbacks[1].callback();
     assert.equal(closeCalls, initiallyListening ? 1 : 0);
+  }
+});
+
+test("global setup retains its one-argument runtime callback contract", () => {
+  assert.equal(globalSetup.length, 1);
+});
+
+test("logger forwards arbitrary console arguments with unchanged identity and ordering", (context) => {
+  const previous = process.env.LOG_LEVEL;
+  process.env.LOG_LEVEL = "DEBUG";
+  try {
+    const logger = new Logger("contract");
+    const object = { value: 1 };
+    const callable = () => "value";
+    const symbol = Symbol("value");
+    const args = [object, callable, symbol, undefined, null, 42];
+    for (const level of ["debug", "info", "warn"] as const) {
+      const output: unknown[][] = [];
+      const spy = context.mock.method(
+        console,
+        level,
+        (...forwarded: unknown[]) => {
+          output.push(forwarded);
+        },
+      );
+      logger[level]("message", ...args);
+      logger[level]("empty");
+      assert.equal(output.length, 2);
+      assert.match(
+        String(output[0][0]),
+        new RegExp(`\\[${level.toUpperCase()}\\] \\[contract\\] message$`),
+      );
+      assert.deepEqual(output[0].slice(1), args);
+      assert.equal(output[0][1], object);
+      assert.equal(output[0][2], callable);
+      assert.equal(output[1].length, 1);
+      spy.mock.restore();
+    }
+    const output: unknown[][] = [];
+    context.mock.method(console, "error", (...forwarded: unknown[]) => {
+      output.push(forwarded);
+    });
+    const error = new Error("owned error");
+    logger.error("failure", error, ...args);
+    logger.error("no error", undefined, ...args);
+    assert.equal(output[0][1], error.stack);
+    assert.deepEqual(output[0].slice(2), args);
+    assert.deepEqual(output[1].slice(1), args);
+  } finally {
+    if (previous === undefined) delete process.env.LOG_LEVEL;
+    else process.env.LOG_LEVEL = previous;
+  }
+});
+
+test("file utilities preserve string, parsed JSON, null and serialization-failure behavior", async (context) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "lint-file-contract-"));
+  const file = path.join(directory, "data.json");
+  context.mock.method(console, "error", () => undefined);
+  try {
+    for (const value of [{ a: [1, true, null] }, ["value"], 42, false, null]) {
+      await TestUtils.saveToFile(file, value);
+      assert.equal(readFileSync(file, "utf8"), JSON.stringify(value, null, 2));
+      assert.deepEqual(await TestUtils.loadFromFile(file), value);
+    }
+    await TestUtils.saveToFile(file, "literal text");
+    assert.equal(readFileSync(file, "utf8"), "literal text");
+    assert.equal(await TestUtils.loadFromFile(file), null);
+    assert.equal(
+      await TestUtils.loadFromFile(path.join(directory, "missing")),
+      null,
+    );
+    const circular: { self?: unknown } = {};
+    circular.self = circular;
+    for (const value of [
+      circular,
+      1n,
+      undefined,
+      Symbol("value"),
+      () => "value",
+    ]) {
+      await assert.rejects(TestUtils.saveToFile(file, value), TypeError);
+      assert.equal(readFileSync(file, "utf8"), "literal text");
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });

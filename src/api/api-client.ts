@@ -6,7 +6,14 @@ import { APIRequestContext, APIResponse, request } from "@playwright/test";
 import { createReadStream } from "node:fs";
 import { Logger } from "../utils/logger";
 
-export interface ApiResponse<T = any> {
+// The default follows the actual JSON, text and parse-failure return paths.
+// It inherits Playwright's permissive JSON contract; it does not validate data.
+type ResponseBody =
+  | Awaited<ReturnType<APIResponse["json"]>>
+  | Awaited<ReturnType<APIResponse["text"]>>
+  | null;
+
+export interface ApiResponse<T = ResponseBody> {
   status: number;
   headers: Record<string, string>;
   data: T;
@@ -70,7 +77,7 @@ export class ApiClient {
   /**
    * Make GET request
    */
-  async get<T = any>(
+  async get<T = ResponseBody>(
     url: string,
     options: RequestOptions = {},
   ): Promise<ApiResponse<T>> {
@@ -80,9 +87,9 @@ export class ApiClient {
   /**
    * Make POST request
    */
-  async post<T = any>(
+  async post<T = ResponseBody>(
     url: string,
-    data?: any,
+    data?: NonNullable<Parameters<APIRequestContext["post"]>[1]>["data"],
     options: RequestOptions = {},
   ): Promise<ApiResponse<T>> {
     return this.makeRequest<T>("POST", url, { ...options, data });
@@ -91,9 +98,9 @@ export class ApiClient {
   /**
    * Make PUT request
    */
-  async put<T = any>(
+  async put<T = ResponseBody>(
     url: string,
-    data?: any,
+    data?: NonNullable<Parameters<APIRequestContext["put"]>[1]>["data"],
     options: RequestOptions = {},
   ): Promise<ApiResponse<T>> {
     return this.makeRequest<T>("PUT", url, { ...options, data });
@@ -102,9 +109,9 @@ export class ApiClient {
   /**
    * Make PATCH request
    */
-  async patch<T = any>(
+  async patch<T = ResponseBody>(
     url: string,
-    data?: any,
+    data?: NonNullable<Parameters<APIRequestContext["patch"]>[1]>["data"],
     options: RequestOptions = {},
   ): Promise<ApiResponse<T>> {
     return this.makeRequest<T>("PATCH", url, { ...options, data });
@@ -113,7 +120,7 @@ export class ApiClient {
   /**
    * Make DELETE request
    */
-  async delete<T = any>(
+  async delete<T = ResponseBody>(
     url: string,
     options: RequestOptions = {},
   ): Promise<ApiResponse<T>> {
@@ -123,10 +130,11 @@ export class ApiClient {
   /**
    * Upload file
    */
-  async uploadFile<T = any>(
+  async uploadFile<T = ResponseBody>(
     url: string,
     filePath: string,
     fieldName: string = "file",
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Preserve the public multipart input contract; upstream field types would narrow existing callers.
     additionalData: Record<string, any> = {},
   ): Promise<ApiResponse<T>> {
     if (!this.context) {
@@ -284,7 +292,7 @@ export class ApiClient {
 
 interface RequestOptions {
   headers?: Record<string, string>;
-  data?: any;
+  data?: NonNullable<Parameters<APIRequestContext["get"]>[1]>["data"];
   params?: Record<string, string>;
   timeout?: number;
 }

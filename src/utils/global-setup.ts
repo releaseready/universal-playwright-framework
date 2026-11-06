@@ -8,7 +8,8 @@ import { Logger } from "./logger";
 
 const logger = new Logger("GlobalSetup");
 
-const globalSetup: (config: FullConfig) => Promise<void> = async () => {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- Preserve the Playwright callback signature and runtime arity of one.
+async function globalSetup(_config: FullConfig) {
   logger.info("Starting global setup...");
 
   try {
@@ -31,7 +32,7 @@ const globalSetup: (config: FullConfig) => Promise<void> = async () => {
     logger.error("Global setup failed", error as Error);
     throw error;
   }
-};
+}
 
 async function setupAuthentication() {
   // Implementation for setting up authentication
