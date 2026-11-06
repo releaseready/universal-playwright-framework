@@ -1,4 +1,19 @@
-# Synthetic input-preparation contract
+# Input-preparation contract
+
+## Current integration and acceptance boundary
+
+The synthetic preparation API and standalone provider below remain supported.
+ReleaseReady's automatic portal-to-TDM-to-worker integration already composes
+these public APIs; it must not be rebuilt as a second provider in this package.
+See the [RRDWEB-3 source and acceptance map](https://github.com/releaseready/universal-playwright-framework/blob/main/docs/rrdweb-3-acceptance-evidence.md)
+for exact source identities, tests, and the distinction between recorded local
+acceptance and still-gated hosted/customer evidence.
+
+Inherited-terminal collection remains disabled by RRDPLAT-39. The historical
+operator example below describes a compatibility entry point that rejects; it
+is not a working capture path or a prerequisite for automatic TDM execution.
+
+## Synthetic preparation
 
 `prepareScenarioInputs` accepts a JSON document no larger than 64 KiB. It
 requires version 1, an explicitly supplied environment ID/revision and origin,
@@ -34,8 +49,9 @@ not navigate, make network requests, or enforce redirects.
 `RuntimeSecretProvider` describes the injected runtime consumption boundary;
 `prepareScenarioInputs` does not accept or invoke a provider. Prepared account
 access contains only account and secret reference identifiers. The one-login
-runtime boundary below adds a local operator prompt and in-memory implementation;
-it does not provision credentials or establish customer-run acceptance.
+runtime boundary below provides an in-memory implementation. Its former local
+operator prompt is disabled; it does not provision credentials or establish
+customer-run acceptance.
 
 Each selected scenario may request cleanup with a synthetic cleanup reference
 and requested revision. The cleanup request has no `authorized` field:
@@ -293,16 +309,17 @@ credential values.
   guaranteed JavaScript memory erasure, revocation of a browser's already-used
   credential, or disposal of strings retained by caller code.
 
-`scripts/runtime-login.test.ts` uses synthetic canaries for prompt delivery,
+`scripts/runtime-login.test.ts` uses synthetic canaries for provider delivery and terminal rejection,
 scope/revision/expiry rejection, safe exceptions, disposal, reference-only job
 and receipt serialization, and real owned Chromium input delivery with fresh
 context isolation. It never navigates to the customer website.
 
-RRDWEB-3 remains **In Progress** until the independently approved environment,
-Web8 reviewed login, Web6 execution join, and RRDSCRUM-62 secure handover are
-connected and the joined customer confidentiality/isolation evidence passes.
-A synthetic canary pass is not that customer acceptance evidence. No customer
-credentials or live customer login are included in this change.
+The automatic integration and approved fresh local synthetic acceptance are
+recorded separately in the [current evidence map](https://github.com/releaseready/universal-playwright-framework/blob/main/docs/rrdweb-3-acceptance-evidence.md).
+They do not establish hosted or live customer acceptance. RRDWEB-3's hosted AC
+remains gated through RRDPLAT-12; local test success alone does not complete the
+whole ticket. No customer credentials or live customer login are included in
+these package tests.
 
 The RRDWEB-8 [Partay login-only consumer](./partay-login.md) uses this boundary
 with a fresh browser context, exact target/logo/overlay assertions, bounded
