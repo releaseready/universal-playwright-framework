@@ -48,6 +48,31 @@ a customer login. RR17/RR89 being Done does not prove Web3's newer hosted AC.
 
 ## Current validation
 
+### Single full aggregate follow-up
+
+On 6 November, exactly one `npm run test:features:regression` invocation on
+published PR47 commit `9ab2c326557edb7e428274e07be6f43357727763` completed with
+**exit code 0: 189 Node tests and 61 BDD scenarios / 198 steps passed**.
+All aggregate stages were reached; none failed or were skipped. This includes
+the installed-package consumer, whose tarball SHA-256 remained
+`73cd20c9438c9d56de325e49e90a4ab49c510ef8947fec495128999ffdc7d4cb`.
+
+The tracked tree was clean before and after the run and still matched that
+exact commit. `package.json` SHA-256 matched the committed bytes before and
+after: `66fd613c6ee1d4b0ec4e88ca13f2284aaebd3383d7589d64939f911910d24b33`.
+The calculated and recorded review fingerprint both remained
+`8e0733112e631ecfdcdd46a21361edc8d7c36b0d14da5c69187595f36c7e4627`.
+Node `24.4.0`, Playwright `1.55.1` and installed matching Chromium revision
+`1193` were used. No manifest experiment, concurrency/deadline/gate change,
+source edit, alternate browser or retained-service restart occurred during this
+run. The subsequent change only records these results in this document.
+
+This closes the missing full-aggregate evidence for the local documentation
+slice. It does not waive the separately recorded baseline lint failure or
+complete hosted AC7. Earlier unsuccessful attempts remain recorded below.
+
+### Earlier staged validation and retained failures
+
 All current checks use Node `24.4.0`. The shell initially selected unsupported
 Node `23.6.0`; Cucumber refused that attempt before scenarios ran. The existing
 Node 24 toolchain was then selected explicitly, without installing a toolchain.
