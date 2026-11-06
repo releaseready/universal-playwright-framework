@@ -1,0 +1,10 @@
+{
+  "default": {
+    "require": [
+      "dist/authoring/examples/authoring/cucumber/steps.js",
+      "dist/authoring/examples/authoring/regression/steps.js"
+    ],
+    "format": ["progress"],
+    "retry": 0
+  }
+}

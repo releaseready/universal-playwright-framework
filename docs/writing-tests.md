@@ -223,7 +223,7 @@ test.describe('Flaky Network Tests', () => {
     // Configure longer timeout for this test
     test.setTimeout(60000);
 
-    await page.goto('/events', { waitUntil: 'networkidle' });
+    await page.goto('/events', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('[data-testid="events-list"]')).toBeVisible({ timeout: 30000 });
   });
 });
@@ -290,7 +290,7 @@ test('should load events page quickly', async ({ page }) => {
   const startTime = Date.now();
   
   await page.goto('/events');
-  await page.waitForLoadState('networkidle');
+  await expect(page.locator('[data-testid="events-list"]')).toBeVisible({ timeout: 3000 });
   
   const loadTime = Date.now() - startTime;
   expect(loadTime).toBeLessThan(3000); // Should load in under 3 seconds
@@ -344,3 +344,5 @@ test.describe('Mobile Experience', () => {
 8. **Test Edge Cases** - Include error scenarios
 9. **Keep Tests Independent** - Each test should be isolated
 10. **Use Retries Sparingly** - Fix flaky tests instead of retrying
+
+See [Authoring styles](authoring-styles.md) for runnable isolated examples, shared fixtures, and runner support boundaries.

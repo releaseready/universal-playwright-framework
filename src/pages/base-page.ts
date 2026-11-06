@@ -1,9 +1,10 @@
 /**
- * Base Page class that all page objects should extend
+ * Optional Base Page class for page objects
  * Provides common functionality and utilities for page interactions
  */
 
 import { Page, Locator } from "@playwright/test";
+import { waitForVisible } from "../readiness/wait-for-visible";
 import { Logger } from "../utils/logger";
 
 export abstract class BasePage {
@@ -22,16 +23,21 @@ export abstract class BasePage {
    */
   async goto(): Promise<void> {
     this.logger.info("Navigating to page");
-    await this.page.goto(this.url);
+    await this.page.goto(this.url, { waitUntil: "domcontentloaded" });
     await this.waitForPageLoad();
   }
 
   /**
-   * Wait for page to be fully loaded
+   * Document lifecycle only; does not establish application readiness.
+   * @deprecated Call waitForReady with an app-specific locator, or use web-first assertions.
    */
   async waitForPageLoad(): Promise<void> {
-    await this.page.waitForLoadState("networkidle");
-    await this.page.waitForLoadState("domcontentloaded");
+    await this.page.waitForLoadState("domcontentloaded", { timeout: 30000 });
+  }
+
+  /** Wait for a caller-selected visible application state. */
+  async waitForReady(locator: Locator, timeout: number = 10000): Promise<void> {
+    await waitForVisible(locator, timeout);
   }
 
   /**
@@ -250,7 +256,7 @@ export abstract class BasePage {
    * Reload page
    */
   async reloadPage(): Promise<void> {
-    await this.page.reload();
+    await this.page.reload({ waitUntil: "domcontentloaded" });
     await this.waitForPageLoad();
     this.logger.info("Page reloaded");
   }
@@ -259,7 +265,7 @@ export abstract class BasePage {
    * Go back in browser history
    */
   async goBack(): Promise<void> {
-    await this.page.goBack();
+    await this.page.goBack({ waitUntil: "domcontentloaded" });
     await this.waitForPageLoad();
     this.logger.info("Navigated back");
   }
@@ -268,7 +274,7 @@ export abstract class BasePage {
    * Go forward in browser history
    */
   async goForward(): Promise<void> {
-    await this.page.goForward();
+    await this.page.goForward({ waitUntil: "domcontentloaded" });
     await this.waitForPageLoad();
     this.logger.info("Navigated forward");
   }

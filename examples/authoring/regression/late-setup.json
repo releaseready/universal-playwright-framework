@@ -1,0 +1,7 @@
+{
+  "default": {
+    "require": ["dist/authoring/examples/authoring/regression/late-setup.js"],
+    "format": ["progress"],
+    "retry": 0
+  }
+}

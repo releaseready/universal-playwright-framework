@@ -218,7 +218,7 @@ chmod +x scripts/*.sh
 
 **Tests are flaky**
 - Use web-first assertions: `await expect(locator).toBeVisible()`
-- Add proper waits: `await page.waitForLoadState('networkidle')`
+- Wait for the required UI state: `await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled({ timeout: 10000 })`
 - Check for race conditions
 
 ### Getting Help
@@ -229,3 +229,5 @@ chmod +x scripts/*.sh
 4. Enable verbose logging: `LOG_LEVEL=DEBUG npm test`
 
 You're ready to start testing! 🎭
+
+For runnable owned examples and independent style/runner choices, see [Authoring styles](docs/authoring-styles.md).
