@@ -78,7 +78,7 @@ export class TestUtils {
    * Validate phone number format
    */
   static isValidPhoneNumber(phone: string): boolean {
-    const phoneRegex = /^\+?[\d\s\-\(\)]+$/;
+    const phoneRegex = /^\+?[\d\s\-()]+$/;
     return phoneRegex.test(phone) && phone.replace(/\D/g, "").length >= 10;
   }
 

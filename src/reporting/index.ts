@@ -237,18 +237,22 @@ export function createExecutionReport(
 }
 
 function plainText(value: string): string {
-  return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, (character) => {
-    if (character === "\n") {
-      return "\\n";
+  let text = "";
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if (code > 0x1f && (code < 0x7f || code > 0x9f)) {
+      text += character;
+    } else if (character === "\n") {
+      text += "\\n";
+    } else if (character === "\r") {
+      text += "\\r";
+    } else if (character === "\t") {
+      text += " ";
+    } else {
+      text += "�";
     }
-    if (character === "\r") {
-      return "\\r";
-    }
-    if (character === "\t") {
-      return " ";
-    }
-    return "�";
-  });
+  }
+  return text;
 }
 
 function scenarioLines(heading: string, scenario: ReportScenario): string[] {

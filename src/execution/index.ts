@@ -348,14 +348,14 @@ function closeServer(
   return new Promise((resolve) => {
     let settled = false;
     let injectedTimer: ReturnType<typeof setTimeout> | undefined;
-    let forceTimer: ReturnType<typeof setTimeout> | undefined;
+    const forcedClose: { timer?: ReturnType<typeof setTimeout> } = {};
     let finalTimer: ReturnType<typeof setTimeout> | undefined;
     const finish = (closed: boolean): void => {
       if (settled) {
         return;
       }
       settled = true;
-      for (const timer of [injectedTimer, forceTimer, finalTimer]) {
+      for (const timer of [injectedTimer, forcedClose.timer, finalTimer]) {
         if (timer) {
           clearTimeout(timer);
         }
@@ -389,7 +389,7 @@ function closeServer(
     } else {
       initiateClose(true);
     }
-    forceTimer = setTimeout(() => {
+    forcedClose.timer = setTimeout(() => {
       for (const socket of sockets) {
         socket.destroy();
       }

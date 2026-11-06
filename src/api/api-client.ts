@@ -2,7 +2,8 @@
  * API client for making HTTP requests during tests
  */
 
-import { APIRequestContext, request } from "@playwright/test";
+import { APIRequestContext, APIResponse, request } from "@playwright/test";
+import { createReadStream } from "node:fs";
 import { Logger } from "../utils/logger";
 
 export interface ApiResponse<T = any> {
@@ -133,7 +134,7 @@ export class ApiClient {
     }
 
     const formData = {
-      [fieldName]: require("fs").createReadStream(filePath),
+      [fieldName]: createReadStream(filePath),
       ...additionalData,
     };
 
@@ -162,10 +163,11 @@ export class ApiClient {
 
     this.logger.info(`Making ${method} request to ${url}`);
 
-    const requestOptions: any = {
-      headers: mergedHeaders,
-      timeout: timeout || 30000,
-    };
+    const requestOptions: NonNullable<Parameters<APIRequestContext["get"]>[1]> =
+      {
+        headers: mergedHeaders,
+        timeout: timeout || 30000,
+      };
 
     if (data) {
       requestOptions.data = data;
@@ -203,7 +205,9 @@ export class ApiClient {
   /**
    * Process response
    */
-  private async processResponse<T>(response: any): Promise<ApiResponse<T>> {
+  private async processResponse<T>(
+    response: APIResponse,
+  ): Promise<ApiResponse<T>> {
     const status = response.status();
     const headers = response.headers();
     const ok = response.ok();
@@ -214,11 +218,11 @@ export class ApiClient {
       if (contentType.includes("application/json")) {
         data = await response.json();
       } else {
-        data = (await response.text()) as any;
+        data = (await response.text()) as T;
       }
     } catch (error) {
       this.logger.warn("Failed to parse response body", error as Error);
-      data = null as any;
+      data = null as T;
     }
 
     this.logger.info(`Response: ${status} ${ok ? "OK" : "ERROR"}`);
