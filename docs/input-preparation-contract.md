@@ -237,13 +237,12 @@ const receipt = await withOperatorLoginInputs(
 );
 ```
 
-The local prompt requires an interactive TTY for both input and output and
-disables echo for both account fields. It prints fixed labels only, not entered
-characters or masking characters. It rejects pipe/file input, blank input,
-oversized input, multiline paste, terminal-control input, interruption, expiry,
-or a terminal already in use. Terminal mode and listeners are restored on both
-success and failure. There is deliberately no command-line argument,
-environment-variable, saved-file, or Git credential fallback.
+P13 / RRDPLAT-39 temporarily disables inherited-terminal credential entry in
+all environments, including Dev, UAT and Production. `withOperatorLoginInputs`
+rejects with `runtime-input-unavailable` before inspecting input, printing a
+prompt, changing terminal mode, collecting values, or calling a consumer. There
+is no configuration override or pipe, file, argument, or environment fallback.
+D15 tracks the future secure capture design; this disablement does not implement it.
 
 Private-account-file input is deferred and excluded from the MVP. The Partay
 CLI option and direct file-consumption helper reject before touching a supplied
@@ -251,15 +250,9 @@ credential path or acquiring a runtime secret, consumer, or browser. This does
 not change `withOperatorLoginInputs`, the ordinary runtime provider, or the
 public data-reference API.
 
-`withOperatorLoginInputs` constructs the per-run in-memory provider, resolves
-the account through the existing `RuntimeSecretProvider.resolve(reference,
-scope)` method, checks the review again after asynchronous resolution, and calls
-the reviewed consumer only after both values validate. The two references are:
-
-```typescript
-{ id: account.id, revision: account.revision, field: "username" }
-{ id: account.id, revision: account.revision, field: "password" }
-```
+The independent in-process provider contract remains available to reviewed
+consumers. Disabling the terminal entry point does not authorize another capture
+surface or credential transport.
 
 For dependency injection, Web6 can call `consumeRuntimeLoginInputs(descriptor,
 request, provider, consumer)` directly. The shipped
@@ -267,8 +260,7 @@ request, provider, consumer)` directly. The shipped
 reference on resolution, even though the base interface keeps the scope
 parameter optional for compatibility. It automatically releases retained values
 at expiry and exposes `dispose()`; the consumer wrapper calls disposal on every
-exit, including preflight rejection and consumer failure. Operator collection
-also disposes in its outer `finally`. An injected provider must implement
+exit, including preflight rejection and consumer failure. An injected provider must implement
 disposal if it retains values.
 
 The receipt says only `status: "completed"`, scope, and account reference. It

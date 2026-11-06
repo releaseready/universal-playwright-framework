@@ -1,5 +1,10 @@
 # Partay login-only consumer (RRDWEB-8)
 
+P13 / RRDPLAT-39: inherited-terminal credential entry is temporarily disabled
+in every environment. `promptAndVerifyPartayLogin` and the prompt-based CLI cannot
+collect credentials or start a login browser. The in-process provider API remains
+available; no alternate capture or transport is enabled. D15 is design work only.
+
 [Ticket](https://noisegatemusicstudios.atlassian.net/browse/RRDWEB-8).
 This consumer does not establish customer acceptance until an authorized live
 run actually passes. Synthetic fixture results are not customer-login evidence.
