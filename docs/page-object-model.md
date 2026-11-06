@@ -111,8 +111,8 @@ Use appropriate wait conditions for dynamic content:
 ```typescript
 export class EventsPage extends BasePage {
   async waitForEventsToLoad(): Promise<void> {
-    await this.page.waitForLoadState('networkidle');
-    await this.waitForElement(this.eventsContainer);
+    await this.waitForReady(this.eventsContainer, 10000);
+    // Assert the expected result content too; a visible container can be empty.
   }
 
   async searchEvents(query: string): Promise<EventSearchResults> {
@@ -303,3 +303,5 @@ export class UserRegistrationPage extends BasePage {
 ```
 
 This approach provides a clean, maintainable structure for your page objects that can be easily extended and reused across different applications.
+
+Page objects are optional. See [Authoring styles](authoring-styles.md) for Simple and Business Flows examples and the BasePage readiness migration.
