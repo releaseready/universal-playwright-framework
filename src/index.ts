@@ -100,3 +100,5 @@ export type {
   ValidateFeatureInput,
 } from "./validation/feature-validator";
 export type { ScenarioApproval } from "./validation/scenario-selector";
+
+export { waitForVisible } from "./readiness/wait-for-visible";
