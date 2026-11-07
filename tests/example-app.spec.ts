@@ -10,13 +10,13 @@
  * 3. Adjust assertions to match your app's behavior
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { TestDataFactory } from "@fixtures/test-data-factory";
 import { BasePage } from "@/pages/base-page";
 
 // Example page object for your app - customize this
 class ExamplePage extends BasePage {
-  constructor(page: any) {
+  constructor(page: Page) {
     super(page, "/"); // 👈 Update with your app's home page path
   }
 

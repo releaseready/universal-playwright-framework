@@ -1,3 +1,4 @@
+import { OWNED_EVIDENCE_ID, readOwnedEvidence } from "./owned-evidence";
 import { randomUUID } from "node:crypto";
 import { lstatSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
@@ -347,14 +348,14 @@ function closeServer(
   return new Promise((resolve) => {
     let settled = false;
     let injectedTimer: ReturnType<typeof setTimeout> | undefined;
-    let forceTimer: ReturnType<typeof setTimeout> | undefined;
+    const forcedClose: { timer?: ReturnType<typeof setTimeout> } = {};
     let finalTimer: ReturnType<typeof setTimeout> | undefined;
     const finish = (closed: boolean): void => {
       if (settled) {
         return;
       }
       settled = true;
-      for (const timer of [injectedTimer, forceTimer, finalTimer]) {
+      for (const timer of [injectedTimer, forcedClose.timer, finalTimer]) {
         if (timer) {
           clearTimeout(timer);
         }
@@ -388,7 +389,7 @@ function closeServer(
     } else {
       initiateClose(true);
     }
-    forceTimer = setTimeout(() => {
+    forcedClose.timer = setTimeout(() => {
       for (const socket of sockets) {
         socket.destroy();
       }
@@ -695,6 +696,12 @@ async function executeScenario(
       `@scenario-id=${scenarioId}`,
       "--format",
       `json:${reportPath}`,
+      ...(scenarioId === OWNED_EVIDENCE_ID
+        ? [
+            "--format",
+            `${path.join(REPOSITORY_ROOT, "dist/cucumber/src/execution/owned-evidence-formatter.js")}:${reportPath}.completed`,
+          ]
+        : []),
       "--strict",
     ],
     {
@@ -796,7 +803,9 @@ async function executeScenario(
   }
 
   const cleanup = safeCleanupReport(cleanupPath);
-  const cucumber = cucumberScenarioEvidence(reportPath, scenarioId);
+  const cucumber =
+    cucumberScenarioEvidence(reportPath, scenarioId) ??
+    readOwnedEvidence(`${reportPath}.completed`, scenarioId);
   const scenarioPassed = cucumber
     ? cucumber.steps.every((step) => step.status === "passed")
     : undefined;

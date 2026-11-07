@@ -3,6 +3,15 @@
  * Provides structured logging with different levels
  */
 
+// Logger supplies the formatted first argument and forwards the console method's
+// remaining arguments unchanged. Preserve that upstream argument contract.
+type ConsoleRest<Arguments extends unknown[]> = Arguments extends [
+  message?: unknown,
+  ...rest: infer Rest,
+]
+  ? Rest
+  : never;
+
 export enum LogLevel {
   DEBUG = 0,
   INFO = 1,
@@ -33,25 +42,38 @@ export class Logger {
     return `[${timestamp}] [${level}] [${this.className}] ${message}`;
   }
 
-  debug(message: string, ...args: any[]): void {
+  debug(
+    message: string,
+    ...args: ConsoleRest<Parameters<typeof console.debug>>
+  ): void {
     if (this.shouldLog(LogLevel.DEBUG)) {
       console.debug(this.formatMessage("DEBUG", message), ...args);
     }
   }
 
-  info(message: string, ...args: any[]): void {
+  info(
+    message: string,
+    ...args: ConsoleRest<Parameters<typeof console.info>>
+  ): void {
     if (this.shouldLog(LogLevel.INFO)) {
       console.info(this.formatMessage("INFO", message), ...args);
     }
   }
 
-  warn(message: string, ...args: any[]): void {
+  warn(
+    message: string,
+    ...args: ConsoleRest<Parameters<typeof console.warn>>
+  ): void {
     if (this.shouldLog(LogLevel.WARN)) {
       console.warn(this.formatMessage("WARN", message), ...args);
     }
   }
 
-  error(message: string, error?: Error, ...args: any[]): void {
+  error(
+    message: string,
+    error?: Error,
+    ...args: ConsoleRest<Parameters<typeof console.error>>
+  ): void {
     if (this.shouldLog(LogLevel.ERROR)) {
       if (error) {
         console.error(

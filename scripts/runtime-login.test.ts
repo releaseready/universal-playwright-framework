@@ -13,6 +13,7 @@ import {
   consumeRuntimeLoginInputs,
   InMemoryRuntimeSecretProvider,
   RuntimeLoginError,
+  RuntimeLoginFailure,
   validateRuntimeLoginRequest,
   type RuntimeLoginRequest,
 } from "../src/input-preparation/runtime-login";
@@ -644,3 +645,106 @@ for (const environment of [
     }
   });
 }
+
+test("lint repair preserves disposal precedence and exactly-once disposal across outcomes", async () => {
+  for (const stage of [
+    "validation",
+    "resolve",
+    "unknown-consumer",
+    "assertion-consumer",
+    "policy-consumer",
+    "success",
+  ] as const) {
+    for (const disposalThrows of [false, true]) {
+      const { descriptor, request } = fixture();
+      let disposals = 0;
+      let resolutions = 0;
+      let consumptions = 0;
+      let captured: { readonly username: string } | undefined;
+      const result = consumeRuntimeLoginInputs(
+        descriptor,
+        stage === "validation" ? { ...request, expiresAt: 0 } : request,
+        {
+          resolve: async (reference) => {
+            resolutions += 1;
+            if (stage === "resolve") throw new Error(canary.password);
+            return reference.field === "username"
+              ? canary.username
+              : canary.password;
+          },
+          dispose: () => {
+            disposals += 1;
+            if (disposalThrows) throw new Error(canary.password);
+          },
+        },
+        async (account) => {
+          consumptions += 1;
+          captured = account;
+          if (stage === "unknown-consumer") throw new Error(canary.password);
+          if (stage === "policy-consumer")
+            throw new RuntimeLoginFailure(
+              "request-policy",
+              "confirmed",
+              "off-origin",
+              "request-policy",
+            );
+          if (stage === "assertion-consumer")
+            throw new RuntimeLoginFailure(
+              "brand-text",
+              "confirmed",
+              undefined,
+              "assertion-failed",
+            );
+        },
+      );
+      if (stage === "success" && !disposalThrows) {
+        assert.equal((await result).status, "completed");
+      } else {
+        await assert.rejects(result, (error: unknown) => {
+          assert.doesNotMatch(inspect(error), /SYNTHETIC_PASSWORD_CANARY/);
+          if (stage === "assertion-consumer") {
+            assert.ok(error instanceof RuntimeLoginFailure);
+            assert.equal(error.failureStage, "brand-text");
+            assert.equal(error.cleanupStatus, "confirmed");
+            assert.equal(
+              error.failureClassification,
+              disposalThrows ? "operational" : "assertion-failed",
+            );
+          } else if (stage === "policy-consumer") {
+            assert.ok(error instanceof RuntimeLoginFailure);
+            assert.equal(error.failureStage, "request-policy");
+            assert.equal(error.cleanupStatus, "confirmed");
+            assert.equal(error.policyReason, "off-origin");
+            assert.equal(error.failureClassification, "request-policy");
+          } else if (disposalThrows) {
+            assert.ok(error instanceof RuntimeLoginFailure);
+            assert.equal(error.failureStage, "input-disposal");
+            assert.equal(error.cleanupStatus, "unconfirmed");
+            assert.equal(error.failureClassification, "operational");
+          } else {
+            assert.ok(error instanceof RuntimeLoginError);
+            assert.equal(
+              error.code,
+              stage === "validation"
+                ? "invalid-runtime-input"
+                : stage === "resolve"
+                  ? "runtime-input-unavailable"
+                  : "runtime-login-failed",
+            );
+          }
+          return true;
+        });
+      }
+      assert.equal(disposals, 1);
+      assert.equal(
+        resolutions,
+        stage === "validation" ? 0 : stage === "resolve" ? 1 : 2,
+      );
+      assert.equal(
+        consumptions,
+        stage === "validation" || stage === "resolve" ? 0 : 1,
+      );
+      if (captured) assert.throws(() => captured!.username, RuntimeLoginError);
+    }
+  }
+});

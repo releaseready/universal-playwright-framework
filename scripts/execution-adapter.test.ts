@@ -1,3 +1,7 @@
+import {
+  withIsolatedReviewedPackage,
+  assertOriginalReviewUnaffected,
+} from "./isolated-reviewed-package";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -8,8 +12,6 @@ import {
   type ExecutionOptions,
   type ExecutionSummary,
 } from "../src/execution";
-
-const repositoryRoot = path.resolve(__dirname, "../../..");
 
 async function run(
   scenarioId: string,
@@ -447,33 +449,48 @@ test("injected cleanup failure is visible and has a safe diagnostic reference", 
 });
 
 test("tampered emitted code, runner config, and dependency metadata fail pre-acquisition", async () => {
-  for (const relativePath of [
-    "dist/cucumber/features/execution/steps.js",
-    "src/input-preparation/data-references.ts",
-    "dist/cucumber/src/input-preparation/data-references.js",
-    "src/input-preparation/runtime-login.ts",
-    "dist/cucumber/src/input-preparation/runtime-login.js",
-    "src/input-preparation/operator-prompt.ts",
-    "dist/cucumber/src/input-preparation/operator-prompt.js",
-    "cucumber-execution.json",
-    "node_modules/playwright/package.json",
-  ]) {
-    const file = path.join(repositoryRoot, relativePath);
-    const original = readFileSync(file);
-    let result: ExecutionSummary | undefined;
-    try {
-      writeFileSync(
-        file,
-        Buffer.concat([original, Buffer.from("\n// tampered\n")]),
-      );
-      result = await run("browser-flow");
-    } finally {
-      writeFileSync(file, original);
-    }
+  await withIsolatedReviewedPackage(async (isolated) => {
+    const { executeReviewedScenarios: executeIsolated } = (await import(
+      path.join(isolated, "dist/cucumber/src/execution/index.js")
+    )) as typeof import("../src/execution");
+    const { loadReviewedScenarios } = (await import(
+      path.join(isolated, "dist/cucumber/src/execution/reviewed-scenarios.js")
+    )) as typeof import("../src/execution/reviewed-scenarios");
+    await loadReviewedScenarios();
+    for (const relativePath of [
+      "dist/cucumber/features/execution/steps.js",
+      "src/input-preparation/data-references.ts",
+      "dist/cucumber/src/input-preparation/data-references.js",
+      "src/input-preparation/runtime-login.ts",
+      "dist/cucumber/src/input-preparation/runtime-login.js",
+      "src/input-preparation/operator-prompt.ts",
+      "dist/cucumber/src/input-preparation/operator-prompt.js",
+      "cucumber-execution.json",
+      "node_modules/playwright/package.json",
+    ]) {
+      const file = path.join(isolated, relativePath);
+      const original = readFileSync(file);
+      let result: ExecutionSummary | undefined;
+      try {
+        writeFileSync(
+          file,
+          Buffer.concat([original, Buffer.from("\n// tampered\n")]),
+        );
+        result = await executeIsolated({ scenarioIds: ["browser-flow"] });
+        assertOriginalReviewUnaffected(relativePath, isolated, original);
+      } finally {
+        writeFileSync(file, original);
+      }
 
-    assert.equal(result?.status, "incomplete", relativePath);
-    assert.equal(result?.resourceCleanup.status, "not_required", relativePath);
-    assert.deepEqual(result?.resourceCleanup.failures, [], relativePath);
-    assert.equal(result?.resourceCleanup.browserProcessStopped, null);
-  }
+      await loadReviewedScenarios();
+      assert.equal(result?.status, "incomplete", relativePath);
+      assert.equal(
+        result?.resourceCleanup.status,
+        "not_required",
+        relativePath,
+      );
+      assert.deepEqual(result?.resourceCleanup.failures, [], relativePath);
+      assert.equal(result?.resourceCleanup.browserProcessStopped, null);
+    }
+  });
 });

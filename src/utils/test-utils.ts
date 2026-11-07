@@ -78,7 +78,7 @@ export class TestUtils {
    * Validate phone number format
    */
   static isValidPhoneNumber(phone: string): boolean {
-    const phoneRegex = /^\+?[\d\s\-\(\)]+$/;
+    const phoneRegex = /^\+?[\d\s\-()]+$/;
     return phoneRegex.test(phone) && phone.replace(/\D/g, "").length >= 10;
   }
 
@@ -187,7 +187,10 @@ export class TestUtils {
   /**
    * Save data to file
    */
-  static async saveToFile(filePath: string, data: any): Promise<void> {
+  static async saveToFile(
+    filePath: string,
+    data: string | Parameters<typeof JSON.stringify>[0],
+  ): Promise<void> {
     const fs = await import("fs").then((module) => module.promises);
     const path = await import("path");
 
@@ -203,7 +206,9 @@ export class TestUtils {
   /**
    * Load data from file
    */
-  static async loadFromFile(filePath: string): Promise<any> {
+  static async loadFromFile(
+    filePath: string,
+  ): Promise<ReturnType<typeof JSON.parse> | null> {
     const fs = await import("fs").then((module) => module.promises);
     try {
       const content = await fs.readFile(filePath, "utf8");
@@ -264,6 +269,7 @@ export class TestUtils {
   /**
    * Get page performance metrics
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Preserve the public return contract; the computed object has no equivalent upstream permissive type.
   static async getPerformanceMetrics(page: Page): Promise<any> {
     return await page.evaluate(() => {
       const perfData = performance.getEntriesByType(

@@ -402,6 +402,10 @@ export async function consumeRuntimeLoginInputs(
   consume: (account: RuntimeLoginAccount) => Promise<void>,
 ): Promise<RuntimeLoginResult> {
   let consumerFailure: RuntimeLoginFailure | undefined;
+  let outcome:
+    | { completed: true; result: RuntimeLoginResult }
+    | { completed: false; error: unknown };
+  let disposalFailure: RuntimeLoginFailure | undefined;
   try {
     const reviewed = validateRuntimeLoginRequest(descriptor, request);
     let account: RuntimeLoginValues | undefined;
@@ -440,16 +444,21 @@ export async function consumeRuntimeLoginInputs(
       account?.dispose();
       account = undefined;
     }
-    return {
-      status: "completed",
-      scope: reviewed.scope,
-      account: reviewed.account,
+    outcome = {
+      completed: true,
+      result: {
+        status: "completed",
+        scope: reviewed.scope,
+        account: reviewed.account,
+      },
     };
+  } catch (error) {
+    outcome = { completed: false, error };
   } finally {
     try {
       provider.dispose?.();
     } catch {
-      throw consumerFailure
+      disposalFailure = consumerFailure
         ? new RuntimeLoginFailure(
             consumerFailure.failureStage,
             consumerFailure.cleanupStatus,
@@ -466,4 +475,7 @@ export async function consumeRuntimeLoginInputs(
           );
     }
   }
+  if (disposalFailure) throw disposalFailure;
+  if (!outcome.completed) throw outcome.error;
+  return outcome.result;
 }

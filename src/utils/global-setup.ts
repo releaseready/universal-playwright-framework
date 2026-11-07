@@ -8,17 +8,18 @@ import { Logger } from "./logger";
 
 const logger = new Logger("GlobalSetup");
 
-async function globalSetup(config: FullConfig) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- Preserve the Playwright callback signature and runtime arity of one.
+async function globalSetup(_config: FullConfig) {
   logger.info("Starting global setup...");
 
   try {
     // Create browser instance for setup
     const browser = await chromium.launch();
     const context = await browser.newContext();
-    const page = await context.newPage();
+    await context.newPage();
 
     // Setup authentication if needed
-    await setupAuthentication(page);
+    await setupAuthentication();
 
     // Setup test data if needed
     await setupTestData();
@@ -33,11 +34,12 @@ async function globalSetup(config: FullConfig) {
   }
 }
 
-async function setupAuthentication(page: any) {
+async function setupAuthentication() {
   // Implementation for setting up authentication
   // This could include logging in and saving auth state
   logger.info("Setting up authentication...");
 
+  // To implement authentication, pass the setup page to this helper.
   // Example: Navigate to login page and authenticate
   // await page.goto('/login');
   // await page.fill('[name="email"]', 'test@example.com');

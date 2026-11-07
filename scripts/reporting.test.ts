@@ -101,7 +101,7 @@ test("human text escapes terminal controls while JSON preserves names as data", 
   const text = renderExecutionReport(report);
   const json = renderExecutionReportJson(report);
 
-  assert.doesNotMatch(text, /\u001b/);
+  assert.equal(text.includes("\u001b"), false);
   assert.match(text, /<script>\\nFeature/);
   assert.match(json, /\\u001b/);
   assert.doesNotMatch(text, /<!doctype html/i);
@@ -184,4 +184,42 @@ test("missing Cucumber evidence remains unavailable without changing its outcome
   assert.equal(report.scenarios[0].executionState, "not_executed");
   assert.equal(report.scenarios[0].evidenceStatus, "unavailable");
   assert.match(report.scenarios[0].evidenceReason ?? "", /no artifact/);
+});
+
+test("lint repair preserves every control-code replacement and surrounding Unicode", () => {
+  const fixture = createReportFixtures()[0];
+  const original = fixture.attempts[0].scenarios[0];
+  for (let code = 0; code <= 0xff; code += 1) {
+    const character = String.fromCharCode(code);
+    const name = `prefix${character}suffix😀𝄞\ud800`;
+    const expected =
+      code === 10
+        ? "\\n"
+        : code === 13
+          ? "\\r"
+          : code === 9
+            ? " "
+            : code <= 31 || (code >= 127 && code <= 159)
+              ? "�"
+              : character;
+    const report = createExecutionReport({
+      ...fixture,
+      scenarios: [
+        {
+          ...fixture.scenarios[0],
+          cucumber: { ...original.cucumber!, featureName: name },
+        },
+      ],
+    });
+    assert.ok(
+      renderExecutionReport(report).includes(
+        `prefix${expected}suffix😀𝄞\ud800`,
+      ),
+      `code ${code}`,
+    );
+    assert.equal(
+      JSON.parse(renderExecutionReportJson(report)).scenarios[0].featureName,
+      name,
+    );
+  }
 });
