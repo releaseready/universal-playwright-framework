@@ -1,3 +1,4 @@
+import { launchAuthenticationFixtureBrowser } from "./fixtures/authentication-fixture-launcher";
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Browser } from "@playwright/test";
@@ -215,5 +216,47 @@ test("Given cancellation during confirmed cleanup, completed work still reports 
       assert.equal(error.cleanupStatus, "confirmed");
       return true;
     },
+  );
+});
+
+test("authentication fixture seam forwards only the exact timeout and preserves receiver and promise", async () => {
+  for (const timeoutMs of [5000, 1737]) {
+    const browser = {} as Browser;
+    const promise = Promise.resolve(browser);
+    const calls: [{ timeout: number }][] = [];
+    const browserType = {
+      launch(...args: [{ timeout: number }]): Promise<Browser> {
+        assert.equal(this, browserType);
+        calls.push(args);
+        assert.equal(args[0].timeout, timeoutMs);
+        return promise;
+      },
+    };
+    const actual = launchAuthenticationFixtureBrowser(browserType, timeoutMs);
+    assert.equal(actual, promise);
+    assert.equal(await actual, browser);
+    assert.deepEqual(calls, [[{ timeout: timeoutMs }]]);
+  }
+});
+
+test("authentication fixture seam preserves rejected promise and original error", async () => {
+  const failure = new Error("owned fixture launch rejection");
+  const promise = Promise.reject<Browser>(failure);
+  const browserType = { launch: () => promise };
+  const actual = launchAuthenticationFixtureBrowser(browserType, 5000);
+  assert.equal(actual, promise);
+  await assert.rejects(actual, (error) => error === failure);
+});
+
+test("authentication fixture seam preserves a synchronous launcher exception", () => {
+  const failure = new Error("owned synchronous launch rejection");
+  const browserType = {
+    launch: (): Promise<Browser> => {
+      throw failure;
+    },
+  };
+  assert.throws(
+    () => launchAuthenticationFixtureBrowser(browserType, 5000),
+    (error) => error === failure,
   );
 });

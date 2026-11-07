@@ -1,3 +1,4 @@
+import { launchAuthenticationFixtureBrowser } from "./fixtures/authentication-fixture-launcher";
 import assert from "node:assert/strict";
 import { inspect } from "node:util";
 import { mock, test } from "node:test";
@@ -1726,8 +1727,11 @@ for (const state of [
       const operation = verifyPartayLogin(descriptor, request, provider, {
         authenticationOnlyPolicy: PARTAY_AUTHENTICATION_ONLY_POLICY,
         timeoutMs: 5000,
-        launchBrowser: async () => {
-          const browser = await chromium.launch();
+        launchBrowser: async (timeoutMs) => {
+          const browser = await launchAuthenticationFixtureBrowser(
+            chromium,
+            timeoutMs,
+          );
           browser.on("disconnected", () => {
             browserClosed = true;
           });
