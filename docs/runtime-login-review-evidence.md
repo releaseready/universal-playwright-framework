@@ -62,3 +62,10 @@ cache), and the nested node:test process inherited its parent's reporter context
 producing no captured summary. The installed runner now clears only NODE_TEST_CONTEXT
 and explicitly selects TAP; it still requires all five probes and their passing
 summary. Neither issue changed production behavior or relaxed test assertions.
+
+Sonar initially rejected head `16ab407` for 10.2% new-code duplication. The duplicate
+root/runtime export lists and copied fixture were consolidated: the root re-exports
+the narrow entry (never the reverse), and the existing Partay suite reuses the same
+synthetic descriptor factory. No exclusions or quality thresholds were changed.
+An intermediate harness edit also failed typecheck before its missing local variable
+was corrected; final build and package checks were rerun afterward.
