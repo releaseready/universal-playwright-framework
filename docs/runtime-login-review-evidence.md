@@ -69,3 +69,12 @@ the narrow entry (never the reverse), and the existing Partay suite reuses the s
 synthetic descriptor factory. No exclusions or quality thresholds were changed.
 An intermediate harness edit also failed typecheck before its missing local variable
 was corrected; final build and package checks were rerun afterward.
+
+The additional login-inspection gate initially had 33 passes / 1 failure in the
+hostile-handler observation test. Controlled comparison reproduced that same
+assertion on pristine main (3/10 failures) and the branch (4/10 failures). A separate
+owned diagnostic captured a trusted startup `mouseover` targeting HTML. The test
+now parks the pointer outside the viewport before navigation/listener setup, keeps
+all observation assertions, and adds a post-observation event-injection negative
+control proving the monitor remains armed. No production inspection, event filter,
+cleanup policy or assertion was relaxed.
