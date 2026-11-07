@@ -1,4 +1,3 @@
-import { expect } from "@playwright/test";
 import type {
   PreparedInputDescriptor,
   RuntimeSecretProvider,
@@ -182,6 +181,7 @@ function loginConsumer(
     let policy: ReturnType<typeof createAuthenticationOnlyPolicy> | undefined;
     await withFreshLoginPage(
       async (page, setStage) => {
+        const { expect } = await import("@playwright/test");
         setStage("navigation");
         policy = options.authenticationOnlyPolicy
           ? createAuthenticationOnlyPolicy(page, PARTAY_LOGIN_URL)

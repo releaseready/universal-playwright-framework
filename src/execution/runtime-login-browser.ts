@@ -1,11 +1,4 @@
-import {
-  chromium,
-  errors,
-  type Browser,
-  type BrowserContext,
-  type Page,
-  type Request,
-} from "@playwright/test";
+import type { Browser, BrowserContext, Page, Request } from "@playwright/test";
 import {
   RuntimeLoginFailure,
   type RuntimeLoginFailureStage,
@@ -257,6 +250,9 @@ export async function withFreshLoginPage(
     }
   };
   let browser: Browser | undefined;
+  let timeoutError:
+    | typeof import("@playwright/test").errors.TimeoutError
+    | undefined;
   let context: BrowserContext | undefined;
   let pendingAcquisition = false;
   let acquisitionInterrupted = false;
@@ -296,11 +292,18 @@ export async function withFreshLoginPage(
   });
   const work = async (): Promise<void> => {
     checkActive();
+    // Load only after inputs are consumed, within the existing work deadline.
+    const { chromium, errors } = await import("@playwright/test");
+    timeoutError = errors.TimeoutError;
+    // Cold CommonJS loading can block timer delivery; still honor wall time.
+    if (Date.now() >= deadline) interrupt("timed-out");
+    checkActive();
+    const launchTimeoutMs = Math.max(1, deadline - Date.now());
     pendingAcquisition = true;
     try {
       browser = await (options.launchBrowser
-        ? options.launchBrowser(timeoutMs)
-        : chromium.launch({ headless: true, timeout: timeoutMs }));
+        ? options.launchBrowser(launchTimeoutMs)
+        : chromium.launch({ headless: true, timeout: launchTimeoutMs }));
     } finally {
       pendingAcquisition = false;
     }
@@ -337,7 +340,7 @@ export async function withFreshLoginPage(
     policyReason = safe?.policyReason;
     failureClassification =
       interruption ??
-      (Date.now() >= deadline || error instanceof errors.TimeoutError
+      (Date.now() >= deadline || (timeoutError && error instanceof timeoutError)
         ? "timed-out"
         : safe && safe.failureClassification !== "unknown"
           ? safe.failureClassification

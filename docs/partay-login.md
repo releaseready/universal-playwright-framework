@@ -416,3 +416,6 @@ acceptance have not been verified. Tests use owned loopback pages and synthetic
 canaries; no actual customer run is part of this change.
 
 Work deadline expiry is captured before cleanup begins. Confirmed cleanup within its separate five-second allowance does not turn completed work into a timeout. Genuine work expiry, explicit cancellation during cleanup, and expiry of the cleanup budget still prevent success.
+
+For external-provider worker initialization without eager browser loading, use the public
+[`runtime-login/v1` entry](runtime-login-entry.md). Root imports remain compatible.
