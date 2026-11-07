@@ -417,6 +417,9 @@ test("Given hostile capture handlers, observation never activates any control or
   await fixture(async (url, hits) => {
     await withFreshLoginPage(async (page) => {
       await guardInspectionRequests(page.context(), page, url);
+      // Exclude startup mouseover caused by the browser's initial pointer at (0, 0).
+      // Do this before navigation/listener installation, not during observation.
+      await page.mouse.move(-10, -10);
       await page.goto(url);
       await page.evaluate(() => {
         const eye = document.querySelector<HTMLButtonElement>(".pw-eye")!;
@@ -467,6 +470,12 @@ test("Given hostile capture handlers, observation never activates any control or
       assert.equal(result.eye.activations, 0);
       assert.equal(result.eye.behavior, "unverified");
       assert.equal(await page.locator("#password").inputValue(), "");
+      // Negative control: the monitor remains armed; no event type is ignored.
+      await page.locator("body").dispatchEvent("mouseover");
+      assert.equal(
+        await page.locator("body").getAttribute("data-interactions"),
+        "1",
+      );
     });
     assert.deepEqual(hits, ["GET /"]);
   });

@@ -37,60 +37,16 @@ export type {
   TrustedAdapterContext,
 } from "./adapter/v1";
 
-export {
-  consumeRuntimeLoginInputs,
-  InMemoryRuntimeSecretProvider,
-  RuntimeLoginError,
-  RuntimeLoginFailure,
-  RUNTIME_LOGIN_FAILURE_STAGES,
-  RUNTIME_LOGIN_CLEANUP_STATUSES,
-  RUNTIME_LOGIN_POLICY_REASONS,
-  RUNTIME_LOGIN_FAILURE_CLASSIFICATIONS,
-  validateRuntimeLoginRequest,
-} from "./input-preparation/runtime-login";
-export { withOperatorLoginInputs } from "./input-preparation/operator-prompt";
+// Keep root compatibility while maintaining runtime-login exports in one place.
+export * from "./runtime-login/v1";
 export type {
-  RuntimeLoginAccount,
-  RuntimeLoginErrorCode,
-  RuntimeLoginFailureStage,
-  RuntimeLoginFailureClassification,
-  RuntimeLoginFailureReport,
-  RuntimeLoginCleanupStatus,
-  RuntimeLoginPolicyReason,
-  RuntimeLoginRequest,
-  RuntimeLoginResult,
-} from "./input-preparation/runtime-login";
-export type {
-  OperatorTerminalInput,
-  OperatorTerminalOutput,
-} from "./input-preparation/operator-prompt";
-export type {
-  PreparedInputDescriptor,
   ReviewedDataReferenceInput,
   ReviewedFixtureFieldPolicy,
-  RuntimeSecretProvider,
-  RuntimeSecretScope,
-  SecretReference,
 } from "./input-preparation";
 export {
   prepareScenarioInputs,
   InputPreparationError,
 } from "./input-preparation";
-
-export {
-  verifyPartayLogin,
-  promptAndVerifyPartayLogin,
-  PARTAY_LOGIN_URL,
-  partayLoginFailureReport,
-} from "./customer-login/partay";
-export type { RuntimeLoginBrowserOptions } from "./execution/runtime-login-browser";
-
-export { PARTAY_AUTHENTICATION_ONLY_POLICY } from "./customer-login/authentication-only";
-export type { AuthenticationOnlyBinding } from "./customer-login/authentication-only";
-export type {
-  PartayLoginOptions,
-  PartayLoginResult,
-} from "./customer-login/partay";
 
 // Public offline review boundary; validation never grants execution permission.
 export { validateFeatureFile } from "./validation/feature-validator";

@@ -20,6 +20,10 @@
     "./adapter/v2": {
       "types": "./dist/cucumber/src/adapter/v2.d.ts",
       "default": "./dist/cucumber/src/adapter/v2.js"
+    },
+    "./runtime-login/v1": {
+      "types": "./dist/cucumber/src/runtime-login/v1.d.ts",
+      "default": "./dist/cucumber/src/runtime-login/v1.js"
     }
   },
   "scripts": {
@@ -59,7 +63,8 @@
     "test:login-inspection": "npm run build:cucumber && node --test dist/cucumber/scripts/login-inspection.test.js",
     "inspect:partay-login": "npm run build:cucumber && node dist/cucumber/scripts/inspect-partay-login.js",
     "test:authentication-only": "npm run build:cucumber && node --test dist/cucumber/scripts/authentication-only.test.js",
-    "test:owned-local": "npm run build:cucumber && node --test dist/cucumber/scripts/owned-local-adapter.test.js"
+    "test:owned-local": "npm run build:cucumber && node --test dist/cucumber/scripts/owned-local-adapter.test.js",
+    "test:runtime-login-entry": "npm run build && node --test --test-concurrency=1 dist/cucumber/scripts/runtime-login-entry.test.js dist/cucumber/scripts/runtime-login-package.test.js"
   },
   "keywords": [
     "playwright",
@@ -113,7 +118,8 @@
     "docs/local-adapter-contract.md",
     "README.md",
     "docs/input-preparation-contract.md",
-    "docs/partay-login.md"
+    "docs/partay-login.md",
+    "docs/runtime-login-entry.md"
   ],
   "publishConfig": {
     "access": "public"
