@@ -98,10 +98,17 @@ test(
         ],
         { cwd: directory, timeout: 30000 },
       );
+      // Do not inherit the parent node:test process's IPC reporter context.
+      const consumerEnvironment: NodeJS.ProcessEnv = {
+        ...process.env,
+        NODE_PATH: "",
+      };
+      delete consumerEnvironment.NODE_TEST_CONTEXT;
       const result = await exec(
         process.execPath,
         [
           "--test",
+          "--test-reporter=tap",
           path.join(
             installed,
             "dist/cucumber/scripts/runtime-login-entry.test.js",
@@ -111,7 +118,7 @@ test(
           cwd: directory,
           timeout: 60000,
           maxBuffer: 1024 * 1024,
-          env: { ...process.env, NODE_PATH: "" },
+          env: consumerEnvironment,
         },
       );
       assert.match(result.stdout, /(?:#|ℹ) pass 5/);

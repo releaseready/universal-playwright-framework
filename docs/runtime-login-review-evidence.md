@@ -55,3 +55,10 @@ This work addresses import initialization only. It does not fix context.close
 reliability, implement PR46 cleanup diagnostics, or measure the separate opt-in
 Dev Cognito pilot's installedLoginBrowser()/playwright-core startup cost. Historical
 overlapping timing samples must not be summed or treated as complete causality.
+
+Initial packed checks also exposed two harness/environment issues: npm's default
+cache path was unavailable in this cloud sandbox (rerun with the writable workspace
+cache), and the nested node:test process inherited its parent's reporter context,
+producing no captured summary. The installed runner now clears only NODE_TEST_CONTEXT
+and explicitly selects TAP; it still requires all five probes and their passing
+summary. Neither issue changed production behavior or relaxed test assertions.
