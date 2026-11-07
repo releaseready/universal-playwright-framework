@@ -78,3 +78,29 @@ now parks the pointer outside the viewport before navigation/listener setup, kee
 all observation assertions, and adds a post-observation event-injection negative
 control proving the monitor remains armed. No production inspection, event filter,
 cleanup policy or assertion was relaxed.
+
+## Cleanup settlement after the deadline
+
+A bounded independent static review identified a separate false-success gap:
+cleanup promises could settle after their wall-clock deadline but before the timer
+callback ran. This does not explain the retained authenticated-login aggregate
+failure, which already reported cleanup/unconfirmed/timed-out.
+
+Before the fix, five controlled fake-resource/fake-clock cases produced two passes
+and three failures: boundary and late success were incorrectly accepted; late
+close rejection retained operational rather than timed-out classification. The
+fix checks the existing cleanup deadline after the race and before confirmation.
+No budgets, close attempts, cancellation authority or error-precedence rules change.
+The full cleanup file with those cases then passed (15 tests). To avoid PR46's
+separate test-file additions, the cases were subsequently moved to a new PR49-owned
+cleanup-deadline test module imported by the entry suite. The installed package
+suite now requires ten passing tests: five public-entry probes plus five deadline
+controls. Final relocated-suite results and package identity are recorded in PR49.
+
+The reviewed implementation digest remains
+`48a7d4d8ad7226a2642f566fea1aa7d6193626bd346d1343b0a3e9bffccf6296`;
+these changed lifecycle/test files are not inputs to that existing digest. Pins
+and verification inputs were not changed. The prior normal aggregate failure,
+full-lint failure and denied branch-protection read remain separate holds. A normal
+final full gate is still required after the shared prerequisite is legitimately
+composed; diagnostic passes are not acceptance and no merge is authorized yet.

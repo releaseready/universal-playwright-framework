@@ -121,7 +121,7 @@ test(
           env: consumerEnvironment,
         },
       );
-      assert.match(result.stdout, /(?:#|ℹ) pass 5/);
+      assert.match(result.stdout, /(?:#|ℹ) pass 10/);
       const revision = await exec("git", ["rev-parse", "HEAD"], { cwd: root });
       process.stdout.write(
         JSON.stringify({
@@ -132,7 +132,7 @@ test(
           shasum: metadata[0].shasum,
           installedCopiesMatch: true,
           consumerTypes: "passed",
-          installedTests: 5,
+          installedTests: 10,
         }) + "\n",
       );
       process.stdout.write(result.stdout);

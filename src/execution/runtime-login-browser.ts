@@ -385,8 +385,13 @@ export async function withFreshLoginPage(
           );
         }),
       ]);
+      // Promise continuations can settle after expiry before its timer runs.
+      cleanupDeadlineExpired ||= Date.now() >= cleanupDeadline;
       cleanupStatus =
-        !confirmed || pendingAcquisition || acquisitionInterrupted
+        !confirmed ||
+        cleanupDeadlineExpired ||
+        pendingAcquisition ||
+        acquisitionInterrupted
           ? "unconfirmed"
           : browser || context
             ? "confirmed"

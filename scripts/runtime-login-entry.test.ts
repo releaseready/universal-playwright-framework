@@ -67,3 +67,6 @@ for (const mode of ["guards", "load-timeout", "root", "browser"]) {
     },
   );
 }
+
+// Also run deterministic cleanup-budget regressions from the installed package.
+import "./runtime-login-cleanup-deadline.test";

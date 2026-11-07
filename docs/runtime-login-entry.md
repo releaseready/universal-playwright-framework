@@ -50,6 +50,11 @@ load exceeding the work budget, and a real owned loopback login through the exis
 request guard. No customer request is sent. It then packs and installs the built
 package outside the source tree, checks declaration consumers, compares installed
 compiled files and repeats the five probes against the installed public export.
+Five deterministic cleanup-deadline controls also run from source and the installed
+package: on-time success/failure, boundary expiry, and late success/failure before
+timer delivery. Cleanup uses its existing deadline even when promise settlement
+precedes the timeout callback. This prevents false success; it does not explain
+the separately retained authenticated-login aggregate timeout.
 The package gate prints tarball SHA-256/integrity and the source HEAD for provenance;
 use a committed clean tree when recording release evidence.
 
